@@ -1,0 +1,20 @@
+name: Check Xcode runner availability
+on:
+  push:
+    branches: [xcode-runner-check]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runner:
+    runs-on: xcode-27
+    timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - name: Verify toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          swiftc --version
+          df -h "$RUNNER_TEMP"
