@@ -1,0 +1,103 @@
+name: Direct checked iPhone build
+on:
+  push:
+    branches: [direct-xcode-build]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ayu-direct-iphone-build
+  cancel-in-progress: false
+jobs:
+  checks-and-build:
+    name: Check features and build iPhone app
+    runs-on: xcode-27
+    timeout-minutes: 360
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      PYTHONDONTWRITEBYTECODE: '1'
+      AYU_TARGET: unsigned_iphone
+      AYU_USE_PUBLIC_TEST_API: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Test build helper
+        run: python3 -B -m unittest discover -s tests -v
+      - name: Restore exact upstream and apply patch
+        run: |
+          git init source
+          git -C source remote add origin https://github.com/TelegramMessenger/Telegram-iOS.git
+          git -C source fetch --depth=1 origin fb0e62ba8a147f0821da6aa63c09da7d79a10111
+          git -C source checkout --detach FETCH_HEAD
+          python3 -c 'import hashlib,json,pathlib; p=pathlib.Path("ayu-personal.patch"); assert hashlib.sha256(p.read_bytes()).hexdigest()==json.loads(pathlib.Path("source-manifest.json").read_text())["patch_sha256"]'
+          git -C source apply --check ../ayu-personal.patch
+          git -C source apply ../ayu-personal.patch
+      - name: Parse changed Swift and test privacy policy
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, subprocess, sys
+          manifest = json.loads(pathlib.Path("source-manifest.json").read_text())
+          paths = [p for p in manifest["changed_files"] if p.endswith(".swift")]
+          failures = []
+          for path in paths:
+              result = subprocess.run(["swiftc", "-frontend", "-parse", str(pathlib.Path("source") / path)], capture_output=True, text=True)
+              if result.returncode:
+                  failures.append(path)
+                  print("FAILED", path, result.stderr[:8000], flush=True)
+          print(f"Parsed {len(paths)} changed Swift files; {len(failures)} failures", flush=True)
+          if failures:
+              sys.exit(1)
+          subprocess.run([sys.executable, "Ayu/tools/project.py", "test-policy"], cwd="source", check=True)
+          PY
+      - name: Check settings and feature policies
+        run: |
+          python3 tools/check_settings_api.py source
+          python3 host-tests/test_policies.py
+          python3 host-tests/test_archive_storage.py
+      - name: Generate pinned FlatBuffers models
+        run: |
+          curl -fLsS --retry 3 -o "$RUNNER_TEMP/flatbuffers.zip" https://github.com/google/flatbuffers/archive/refs/tags/v24.12.23.zip
+          echo "c5cd6a605ff20350c7faa19d8eeb599df6117ea4aabd16ac58a7eb5ba82df4e7  $RUNNER_TEMP/flatbuffers.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/flatbuffers.zip" -d "$RUNNER_TEMP"
+          cmake -S "$RUNNER_TEMP/flatbuffers-24.12.23" -B "$RUNNER_TEMP/flatc-build" -DCMAKE_BUILD_TYPE=Release -DFLATBUFFERS_BUILD_TESTS=OFF -DFLATBUFFERS_INSTALL=OFF -DFLATBUFFERS_BUILD_FLATLIB=OFF
+          cmake --build "$RUNNER_TEMP/flatc-build" --target flatc --parallel 2
+          mkdir -p "$RUNNER_TEMP/ayu-flatbuffers"
+          "$RUNNER_TEMP/flatc-build/flatc" --require-explicit-ids --swift -o "$RUNNER_TEMP/ayu-flatbuffers" source/submodules/TelegramCore/FlatSerialization/Models/*.fbs
+          grep -n 'AyuArchiveMediaResource' "$RUNNER_TEMP/ayu-flatbuffers/TelegramMediaResource_generated.swift"
+      - name: Test archive and Burn prototypes
+        run: |
+          python3 host-tests/test_archive_schema.py "$RUNNER_TEMP/ayu-flatbuffers"
+          python3 host-tests/test_archive_journal.py
+          python3 host-tests/test_burn_transactions.py
+          python3 host-tests/test_archive_deletion_coordinator.py
+          python3 host-tests/test_burn_request.py
+          python3 host-tests/test_snapshot_coordinator.py
+          python3 host-tests/test_archive_postbox.py
+      - name: Restore Bazel cache
+        id: bazel-cache
+        continue-on-error: true
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}/ayu/bazel-cache
+          key: ayu-bazel-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.AYU_TARGET }}-${{ github.run_id }}
+          restore-keys: ayu-bazel-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.AYU_TARGET }}-
+      - name: Build pinned Telegram plus Ayu changes
+        run: >-
+          python3 -u -B tools/ci.py --target "$AYU_TARGET"
+          --source "$RUNNER_TEMP/ayu/source" --output "$GITHUB_WORKSPACE/out"
+      - name: Save archive and verification report
+        if: ${{ always() && hashFiles('out/*') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Ayu-Personal-public-test-${{ github.run_number }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Save Bazel cache
+        if: ${{ always() && steps.bazel-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: ${{ runner.temp }}/ayu/bazel-cache
+          key: ayu-bazel-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.AYU_TARGET }}-${{ github.run_id }}
