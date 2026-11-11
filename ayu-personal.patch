@@ -6049,7 +6049,7 @@ diff --git a/submodules/TelegramCore/Sources/AyuPrivacy/AyuViewOnceBurnRequest.s
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuPrivacy/AyuViewOnceBurnRequest.swift
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,67 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
@@ -6079,6 +6079,9 @@ new file mode 100644
 +        |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
 +            return .single(nil)
 +        }
++        // A timeout is ambiguous: the server may have processed the request.
++        // Keep the in-flight journal entry and local copy for reconciliation.
++        |> timeout(20.0, queue: Queue.concurrentDefaultQueue(), alternate: .single(nil))
 +        |> mapToSignal { result -> Signal<AyuBurnAttemptResult, NoError> in
 +            guard let result else { return .single(.uncertain) }
 +            switch result {
