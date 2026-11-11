@@ -2,7 +2,7 @@
   "name": "Ayu Personal",
   "upstream_url": "https://github.com/TelegramMessenger/Telegram-iOS.git",
   "upstream_commit": "fb0e62ba8a147f0821da6aa63c09da7d79a10111",
-  "patch_sha256": "6bdbb5aaa2699b59f6ddf3f844f2987a6d834f79ddf3a82da96be8db9b4dd977",
+  "patch_sha256": "d91424a8ea3af7231f2bcd863fe705d2dda0ca199f3777ee9b7a84b25d4dc32a",
   "bundle_id": "org.ayupersonal.addmemud",
   "ios_build_verified": false,
   "changed_files": [
@@ -14,6 +14,7 @@
     "build-system/Make/ProjectGeneration.py",
     "build-system/Make/tests/test_project_generation.py",
     "submodules/AccountContext/Sources/ChatController.swift",
+    "submodules/ChatListUI/Sources/ChatListController.swift",
     "submodules/DeletedMessageArchiveTests/BUILD",
     "submodules/DeletedMessageArchiveTests/Tests/DeletedMessageArchiveTests.swift",
     "submodules/GalleryUI/Sources/GalleryController.swift",
@@ -50,6 +51,7 @@
     "submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift",
     "submodules/TelegramCore/Sources/State/AccountViewTracker.swift",
     "submodules/TelegramCore/Sources/State/Fetch.swift",
+    "submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift",
     "submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift",
     "submodules/TelegramCore/Sources/State/ManagedCloudChatRemoveMessagesOperations.swift",
     "submodules/TelegramCore/Sources/State/ManagedConsumePersonalMessagesActions.swift",
@@ -87,9 +89,11 @@
     "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift",
     "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift",
     "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift",
+    "submodules/TelegramUI/Sources/Chat/ChatControllerOpenPeer.swift",
     "submodules/TelegramUI/Sources/ChatController.swift",
     "submodules/TelegramUI/Sources/ChatHistoryEntriesForView.swift",
     "submodules/TelegramUI/Sources/ChatHistoryListNode.swift",
-    "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift"
+    "submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift",
+    "submodules/TelegramUI/Sources/DeletedMessagesJournalController.swift"
   ]
 }
