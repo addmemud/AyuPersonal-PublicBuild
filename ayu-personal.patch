@@ -170,8 +170,39 @@ index 5bdff8a69..b7e115357 100644
              let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
              sourceController.presentInGlobalOverlay(contextController)
          })
+diff --git a/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift b/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
+index 7d422d4e9..0c6b649d6 100644
+--- a/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
++++ b/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
+@@ -856,7 +856,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
+         }
+     }
+     
+-    func setMessage(_ message: EngineRawMessage, mediaSubject: GalleryMediaSubject? = nil, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
++    func setMessage(_ message: EngineRawMessage, mediaSubject: GalleryMediaSubject? = nil, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, allowViewOnceActions: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
+         self.currentMessage = message
+         self.mediaSubject = mediaSubject
+         
+@@ -866,7 +866,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
+         }
+         var canFullscreen = false
+         var canDelete: Bool
+-        var canShare = !message.containsSecretMedia && !Namespaces.Message.allNonRegular.contains(message.id.namespace) && message.adAttribute == nil
++        var canShare = (!message.containsSecretMedia || allowViewOnceActions) && !Namespaces.Message.allNonRegular.contains(message.id.namespace) && message.adAttribute == nil
+                 
+         var canEdit = false
+         var isImage = false
+@@ -951,7 +951,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
+             canEdit = false
+         }
+         
+-        if message.containsSecretMedia {
++        if message.containsSecretMedia && !allowViewOnceActions {
+             canDelete = false
+         }
+         
 diff --git a/submodules/GalleryUI/Sources/GalleryController.swift b/submodules/GalleryUI/Sources/GalleryController.swift
-index 5998c8611..1b48c88e7 100644
+index 5998c8611..0834970a3 100644
 --- a/submodules/GalleryUI/Sources/GalleryController.swift
 +++ b/submodules/GalleryUI/Sources/GalleryController.swift
 @@ -278,6 +278,7 @@ public func galleryItemForEntry(
@@ -194,7 +225,15 @@ index 5998c8611..1b48c88e7 100644
              
              var originData = GalleryItemOriginData(title: message.effectiveAuthor.flatMap(EnginePeer.init)?.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder), timestamp: message.timestamp)
              if Namespaces.Message.allNonRegular.contains(message.id.namespace) {
-@@ -350,6 +354,7 @@ public func galleryItemForEntry(
+@@ -334,6 +338,7 @@ public func galleryItemForEntry(
+                 contentInfo: .message(message, entry.mediaSubject),
+                 caption: caption,
+                 peerIsCopyProtected: peerIsCopyProtected,
++                allowViewOnceActions: allowCaptureOfViewOnceMedia,
+                 playbackRate: playbackRate,
+                 performAction: performAction,
+                 openActionOptions: openActionOptions,
+@@ -350,6 +355,7 @@ public func galleryItemForEntry(
                  translateToLanguage: translateToLanguage,
                  peerIsCopyProtected: peerIsCopyProtected,
                  isSecret: isSecret,
@@ -202,7 +241,7 @@ index 5998c8611..1b48c88e7 100644
                  displayInfoOnTop: displayInfoOnTop,
                  performAction: performAction,
                  openActionOptions: openActionOptions,
-@@ -360,7 +365,10 @@ public func galleryItemForEntry(
+@@ -360,7 +366,10 @@ public func galleryItemForEntry(
      } else if let file = media as? TelegramMediaFile {
          if file.isVideo {
              let content: UniversalVideoContent
@@ -214,7 +253,15 @@ index 5998c8611..1b48c88e7 100644
              if file.isAnimated {
                  content = NativeVideoContent(id: .message(message.stableId, file.fileId), userLocation: .peer(message.id.peerId), fileReference: .message(message: MessageReference(message), media: file), imageReference: mediaImage.flatMap({ ImageMediaReference.message(message: MessageReference(message), media: $0) }), loopVideo: true, enableSound: false, tempFilePath: tempFilePath, captureProtected: captureProtected, storeAfterDownload: generateStoreAfterDownload?(message, file))
              } else {
-@@ -456,6 +464,7 @@ public func galleryItemForEntry(
+@@ -426,6 +435,7 @@ public func galleryItemForEntry(
+                 landscape: landscape,
+                 timecode: timecode,
+                 peerIsCopyProtected: peerIsCopyProtected,
++                allowViewOnceActions: allowCaptureOfViewOnceMedia,
+                 playbackRate: playbackRate,
+                 configuration: configuration,
+                 playbackCompleted: playbackCompleted,
+@@ -456,6 +466,7 @@ public func galleryItemForEntry(
                          translateToLanguage: translateToLanguage,
                          peerIsCopyProtected: peerIsCopyProtected,
                          isSecret: isSecret,
@@ -223,7 +270,7 @@ index 5998c8611..1b48c88e7 100644
                          performAction: performAction,
                          openActionOptions: openActionOptions,
 diff --git a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
-index a1f9746c9..7895f55aa 100644
+index a1f9746c9..c3eb6e6ef 100644
 --- a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 +++ b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 @@ -130,13 +130,14 @@ class ChatImageGalleryItem: GalleryItem {
@@ -288,8 +335,73 @@ index a1f9746c9..7895f55aa 100644
          self.updateFooter(animated: false)
          
          var title: String?
+@@ -489,7 +494,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+         guard let message = self.message else {
+             return
+         }
+-        self.footerContentNode.setMessage(message, mediaSubject: self.mediaSubject, displayInfo: self.displayInfo, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, displayTextRecognitionButton: self.displayTextRecognitionButton, displayStickersButton: self.displayStickersButton, animated: animated)
++        self.footerContentNode.setMessage(message, mediaSubject: self.mediaSubject, displayInfo: self.displayInfo, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, allowViewOnceActions: self.allowCaptureOfViewOnceMedia, displayTextRecognitionButton: self.displayTextRecognitionButton, displayStickersButton: self.displayStickersButton, animated: animated)
+     }
+     
+     fileprivate func setImage(userLocation: MediaResourceUserLocation, imageReference: ImageMediaReference) {
+diff --git a/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift b/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
+index 7636bd184..6ef082905 100644
+--- a/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
++++ b/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
+@@ -66,6 +66,7 @@ public class UniversalVideoGalleryItem: GalleryItem {
+     let landscape: Bool
+     let timecode: Double?
+     let peerIsCopyProtected: Bool
++    let allowViewOnceActions: Bool
+     let playbackRate: () -> Double?
+     let configuration: GalleryConfiguration?
+     let playbackCompleted: () -> Void
+@@ -74,7 +75,7 @@ public class UniversalVideoGalleryItem: GalleryItem {
+     let storeMediaPlaybackState: (MessageId, Double?, Double) -> Void
+     let present: (ViewController, Any?) -> Void
+ 
+-    public init(context: AccountContext, presentationData: PresentationData, content: UniversalVideoContent, originData: GalleryItemOriginData?, indexData: GalleryItemIndexData?, contentInfo: UniversalVideoGalleryItemContentInfo?, caption: NSAttributedString, description: NSAttributedString? = nil, credit: NSAttributedString? = nil, displayInfoOnTop: Bool = false, hideControls: Bool = false, fromPlayingVideo: Bool = false, isSecret: Bool = false, landscape: Bool = false, timecode: Double? = nil, peerIsCopyProtected: Bool = false, playbackRate: @escaping () -> Double?, configuration: GalleryConfiguration? = nil, playbackCompleted: @escaping () -> Void = {}, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction, Message) -> Void, storeMediaPlaybackState: @escaping (MessageId, Double?, Double) -> Void, present: @escaping (ViewController, Any?) -> Void) {
++    public init(context: AccountContext, presentationData: PresentationData, content: UniversalVideoContent, originData: GalleryItemOriginData?, indexData: GalleryItemIndexData?, contentInfo: UniversalVideoGalleryItemContentInfo?, caption: NSAttributedString, description: NSAttributedString? = nil, credit: NSAttributedString? = nil, displayInfoOnTop: Bool = false, hideControls: Bool = false, fromPlayingVideo: Bool = false, isSecret: Bool = false, landscape: Bool = false, timecode: Double? = nil, peerIsCopyProtected: Bool = false, allowViewOnceActions: Bool = false, playbackRate: @escaping () -> Double?, configuration: GalleryConfiguration? = nil, playbackCompleted: @escaping () -> Void = {}, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction, Message) -> Void, storeMediaPlaybackState: @escaping (MessageId, Double?, Double) -> Void, present: @escaping (ViewController, Any?) -> Void) {
+         self.context = context
+         self.presentationData = presentationData
+         self.content = content
+@@ -91,6 +92,7 @@ public class UniversalVideoGalleryItem: GalleryItem {
+         self.landscape = landscape
+         self.timecode = timecode
+         self.peerIsCopyProtected = peerIsCopyProtected
++        self.allowViewOnceActions = allowViewOnceActions
+         self.playbackRate = playbackRate
+         self.configuration = configuration
+         self.playbackCompleted = playbackCompleted
+@@ -1716,7 +1718,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
+                             if let contentInfo = item.contentInfo {
+                                 switch contentInfo {
+                                     case let .message(message, mediaSubject):
+-                                    self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton, animated: true)
++                                    self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, allowViewOnceActions: item.allowViewOnceActions, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton, animated: true)
+                                     case let .webPage(webPage, media, _):
+                                         self.footerContentNode.setWebPage(webPage, media: media)
+                                 }
+@@ -2056,7 +2058,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
+             switch contentInfo {
+                 case let .message(message, mediaSubject):
+                     isAd = message.adAttribute != nil
+-                    self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton)
++                    self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, allowViewOnceActions: item.allowViewOnceActions, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton)
+                 case let .webPage(webPage, media, _):
+                     self.footerContentNode.setWebPage(webPage, media: media)
+             }
+@@ -3118,7 +3120,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
+             switch contentInfo {
+             case let .message(message, mediaSubject):
+                 isAd = message.adAttribute != nil
+-                self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton)
++                self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, allowViewOnceActions: item.allowViewOnceActions, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton)
+             case let .webPage(webPage, media, _):
+                 self.footerContentNode.setWebPage(webPage, media: media)
+             }
 diff --git a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
-index 3596b9d8f..a8289f663 100644
+index 3596b9d8f..8b7da4c41 100644
 --- a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 +++ b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 @@ -6,6 +6,7 @@ import Postbox
@@ -300,16 +412,19 @@ index 3596b9d8f..a8289f663 100644
  import AccountContext
  import RadialStatusNode
  import ScreenCaptureDetection
-@@ -157,6 +158,8 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -157,6 +158,11 @@ public final class SecretMediaPreviewController: ViewController {
      
      private let disposable = MetaDisposable()
      private let markMessageAsConsumedDisposable = MetaDisposable()
 +    private let burnDisposable = MetaDisposable()
++    private let itemBarButtonsDisposable = MetaDisposable()
++    private var itemBarButtons: [UIBarButtonItem] = []
++    private var burnButton: UIBarButtonItem?
 +    private var isBurnInProgress = false
      
      private var controllerNode: SecretMediaPreviewControllerNode {
          return self.displayNode as! SecretMediaPreviewControllerNode
-@@ -180,7 +183,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -180,7 +186,9 @@ public final class SecretMediaPreviewController: ViewController {
      private var screenCaptureEventsDisposable: Disposable?
      
      private weak var tooltipController: TooltipScreen?
@@ -320,7 +435,7 @@ index 3596b9d8f..a8289f663 100644
      public init(context: AccountContext, messageId: MessageId) {
          self.context = context
          self.messageId = messageId
-@@ -193,15 +198,25 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -193,15 +201,25 @@ public final class SecretMediaPreviewController: ViewController {
          
          self.statusBar.statusBarStyle = .White
          
@@ -353,7 +468,16 @@ index 3596b9d8f..a8289f663 100644
          self.hiddenMediaManagerIndex = self.context.sharedContext.mediaManager.galleryHiddenMediaManager.addSource(self._hiddenMedia.get()
          |> map { messageIdAndMedia in
              if let (messageId, media) = messageIdAndMedia {
-@@ -241,6 +256,65 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -228,6 +246,8 @@ public final class SecretMediaPreviewController: ViewController {
+     deinit {
+         self.disposable.dispose()
+         self.markMessageAsConsumedDisposable.dispose()
++        self.burnDisposable.dispose()
++        self.itemBarButtonsDisposable.dispose()
+         if let hiddenMediaManagerIndex = self.hiddenMediaManagerIndex {
+             self.context.sharedContext.mediaManager.galleryHiddenMediaManager.removeSource(hiddenMediaManagerIndex)
+         }
+@@ -241,6 +261,67 @@ public final class SecretMediaPreviewController: ViewController {
      @objc func donePressed() {
          self.dismiss(forceAway: false)
      }
@@ -364,12 +488,14 @@ index 3596b9d8f..a8289f663 100644
 +            shouldDisplay = !message.attributes.contains(where: { ($0 as? ConsumableContentMessageAttribute)?.consumed == true })
 +        }
 +        if shouldDisplay {
-+            if self.navigationItem.rightBarButtonItem == nil {
-+                self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.localFeatures.ghostMode.burnViewOnceMedia, style: .plain, target: self, action: #selector(self.burnPressed))
++            if self.burnButton == nil {
++                self.burnButton = UIBarButtonItem(title: self.presentationData.strings.localFeatures.ghostMode.burnViewOnceMedia, style: .plain, target: self, action: #selector(self.burnPressed))
 +            }
-+            self.navigationItem.rightBarButtonItem?.isEnabled = !self.isBurnInProgress
++            self.burnButton?.isEnabled = !self.isBurnInProgress
++            self.navigationItem.rightBarButtonItems = (self.burnButton.map { [$0] } ?? []) + self.itemBarButtons
 +        } else {
-+            self.navigationItem.rightBarButtonItem = nil
++            self.burnButton = nil
++            self.navigationItem.rightBarButtonItems = nil
 +        }
 +    }
 +
@@ -419,7 +545,7 @@ index 3596b9d8f..a8289f663 100644
      
      public override func loadDisplayNode() {
          let controllerInteraction = GalleryControllerInteraction(presentController: { [weak self] controller, arguments in
-@@ -295,7 +369,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -295,7 +376,7 @@ public final class SecretMediaPreviewController: ViewController {
          self.controllerNode.beginCustomDismiss = { [weak self] _ in
              if let strongSelf = self {
                  strongSelf._hiddenMedia.set(.single(nil))
@@ -428,7 +554,25 @@ index 3596b9d8f..a8289f663 100644
                  let animatedOutNode = true
                  
                  strongSelf.controllerNode.animateOut(animateContent: animatedOutNode, completion: {
-@@ -425,7 +499,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -376,6 +457,17 @@ public final class SecretMediaPreviewController: ViewController {
+                         if message.flags.contains(.Incoming) || strongSelf.currentNodeMessageIsVideo {
+                             if let node = strongSelf.controllerNode.pager.centralItemNode() {
+                                 strongSelf.footerContentNode.set(node.footerContent())
++                                if strongSelf.allowsCaptureOfViewOnceMedia(message) {
++                                    strongSelf.itemBarButtonsDisposable.set((combineLatest(node.rightBarButtonItem(), node.rightBarButtonItems())
++                                    |> deliverOnMainQueue).start(next: { [weak self] item, items in
++                                        guard let self else { return }
++                                        self.itemBarButtons = item.map { [$0] } ?? items ?? []
++                                        self.updateBurnButton()
++                                    }))
++                                } else {
++                                    strongSelf.itemBarButtonsDisposable.set(nil)
++                                    strongSelf.itemBarButtons = []
++                                }
+                             }
+                         } else {
+                             if timerStarted {
+@@ -425,7 +517,9 @@ public final class SecretMediaPreviewController: ViewController {
                      if strongSelf.messageId.peerId.namespace == Namespaces.Peer.CloudUser {
                          let _ = enqueueMessages(account: strongSelf.context.account, peerId: strongSelf.messageId.peerId, messages: [.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaAction(action: TelegramMediaActionType.historyScreenshot)), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
                      } else if strongSelf.messageId.peerId.namespace == Namespaces.Peer.SecretChat {
@@ -439,7 +583,7 @@ index 3596b9d8f..a8289f663 100644
                      }
                  }
              })
-@@ -513,6 +589,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -513,6 +607,9 @@ public final class SecretMediaPreviewController: ViewController {
          if let message = message {
              if self.currentNodeMessageId != message.id {
                  self.currentNodeMessageId = message.id
@@ -449,7 +593,7 @@ index 3596b9d8f..a8289f663 100644
                  var tempFilePath: String?
                  var duration: Double = 0.0
                  for media in message.media {
-@@ -527,9 +606,10 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -527,9 +624,10 @@ public final class SecretMediaPreviewController: ViewController {
                          break
                      }
                  }
@@ -458,11 +602,11 @@ index 3596b9d8f..a8289f663 100644
                  let entry = GalleryEntry(entry: MessageHistoryEntry(message: message, isRead: false, location: nil, monthLocation: nil, attributes: MutableMessageHistoryEntryAttributes(authorIsContact: false)))
 -                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: true, isSecret: true, playbackRate: { nil }, peerIsCopyProtected: true, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
 +                let allowCaptureOfViewOnceMedia = self.allowsCaptureOfViewOnceMedia(message)
-+                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: !allowCaptureOfViewOnceMedia, isSecret: true, allowCaptureOfViewOnceMedia: allowCaptureOfViewOnceMedia, playbackRate: { nil }, peerIsCopyProtected: !allowCaptureOfViewOnceMedia, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
++                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: !allowCaptureOfViewOnceMedia, isSecret: !allowCaptureOfViewOnceMedia, allowCaptureOfViewOnceMedia: allowCaptureOfViewOnceMedia, playbackRate: { nil }, peerIsCopyProtected: !allowCaptureOfViewOnceMedia, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
                      if let self {
                          if self.currentNodeMessageIsViewOnce || (duration < 30.0 && !self.currentMessageIsDismissed) {
                              if let node = self.controllerNode.pager.centralItemNode() as? UniversalVideoGalleryItemNode {
-@@ -539,7 +619,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -539,7 +637,9 @@ public final class SecretMediaPreviewController: ViewController {
                              self.dismiss(forceAway: false)
                          }
                      }
@@ -473,7 +617,7 @@ index 3596b9d8f..a8289f663 100644
                      self._ready.set(.single(true))
                      return
                  }
-@@ -597,6 +679,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -597,6 +697,7 @@ public final class SecretMediaPreviewController: ViewController {
              }
              self.currentMessageIsDismissed = true
          }
