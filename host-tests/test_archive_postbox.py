@@ -72,6 +72,7 @@ public final class Transaction {
     private var values: [ValueBoxKey: PreferencesEntry] = [:]
     public init() {}
     public func getPreferencesEntry(key: ValueBoxKey) -> PreferencesEntry? { values[key] }
+    public func setPreferencesEntry(key: ValueBoxKey, value: PreferencesEntry?) { values[key] = value }
     public func updatePreferencesEntry(key: ValueBoxKey, _ f: (PreferencesEntry?) -> PreferencesEntry?) {
         values[key] = f(values[key])
     }
@@ -110,6 +111,25 @@ precondition(ayuArchiveJournal(transaction: tx)?.entries.first?.state == .burned
 precondition(updateAyuArchiveJournal(transaction: tx) { $0.markDeleting(fileId: 7, token: token) })
 precondition(updateAyuArchiveJournal(transaction: tx) { $0.confirmDeleted(fileId: 7, token: token) })
 precondition(ayuArchiveJournal(transaction: tx)?.retiredIds.contains(7) == true)
+
+// Recovery writes its changes with setPreferencesEntry. Active copy workers
+// must retain their reservation while interrupted ones become deletable.
+let recoveryTx = Transaction()
+let activeToken = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+let inactiveToken = UUID(uuidString: "00000000-0000-0000-0000-000000000012")!
+precondition(updateAyuArchiveJournal(transaction: recoveryTx) {
+    $0.reserve(fileId: 11, token: activeToken, message: messageA, bytes: 20, createdAt: 1, limitBytes: 100)
+})
+precondition(updateAyuArchiveJournal(transaction: recoveryTx) {
+    $0.reserve(fileId: 12, token: inactiveToken, message: messageB, bytes: 30, createdAt: 2, limitBytes: 100)
+})
+let recovered = ayuMarkInactiveArchiveReservations(transaction: recoveryTx, activeTokens: Set([activeToken]))!
+precondition(recovered == [AyuArchiveJournal.Deletion(fileId: 12, token: inactiveToken)])
+let recoveryJournal = ayuArchiveJournal(transaction: recoveryTx)!
+precondition(recoveryJournal.entries.first(where: { $0.fileId == 11 })?.state == .reserved)
+precondition(recoveryJournal.entries.first(where: { $0.fileId == 12 })?.state == .deleting)
+precondition(recoveryJournal.accountedBytes == 50)
+
 var limits = DeletedMessageArchiveSettings.defaultSettings
 limits.mediaLimitGigabytes = DeletedMessageArchiveSettings.limit300Megabytes
 limits.disappearingMediaLimitGigabytes = DeletedMessageArchiveSettings.unlimitedMediaLimit
