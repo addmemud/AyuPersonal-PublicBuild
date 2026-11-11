@@ -1,0 +1,37 @@
+name: Prepare existing iPhone IPA for AltStore
+on:
+  push:
+    branches: [altstore-placeholder-packaging]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  prepare:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retrieve verified existing IPA
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: 13884281983
+          run-id: 43062228238
+          github-token: ${{ github.token }}
+          path: input
+          merge-multiple: true
+      - name: Check and package without recompilation
+        run: >-
+          python3 -B tools/prepare_altstore.py --input input --output out --work "$RUNNER_TEMP/ayu-altstore"
+          --source-run 43062228238 --source-artifact 13884281983
+          --source-ipa-sha256 4ab7dfc13986d0b2a194f44bbf6a76c6dce5fcd7bda203bff92f213847b36f7e
+          --source-patch-sha256 2c7da3ec4c5c127f7cb52e756796665c7d548e672b17ab0a388d7fa455a5ded9
+          --resigned-bundle-base com.000000000000
+      - name: Upload placeholder package for local finishing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ayu-altstore-placeholder
+          path: out/
+          if-no-files-found: error
+          retention-days: 1
