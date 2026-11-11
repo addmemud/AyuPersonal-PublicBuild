@@ -1,0 +1,25 @@
+name: Interactive view-once consumption checks
+on:
+  push:
+    branches: [viewonce-consume-check]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Restore pinned source
+        run: |
+          git init source
+          git -C source remote add origin https://github.com/TelegramMessenger/Telegram-iOS.git
+          git -C source fetch --depth=1 origin fb0e62ba8a147f0821da6aa63c09da7d79a10111
+          git -C source checkout --detach FETCH_HEAD
+          python3 -c 'import hashlib,json,pathlib; p=pathlib.Path("ayu-personal.patch"); assert hashlib.sha256(p.read_bytes()).hexdigest()==json.loads(pathlib.Path("source-manifest.json").read_text())["patch_sha256"]'
+          git -C source apply --check ../ayu-personal.patch
+          git -C source apply ../ayu-personal.patch
+      - name: Test actual view-once consumption guard
+        run: python3 host-tests/test_view_once_consumption.py
