@@ -193,7 +193,7 @@ index a1f9746c9..7895f55aa 100644
          
          var title: String?
 diff --git a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
-index 3596b9d8f..a941e9593 100644
+index 3596b9d8f..8099e4d6d 100644
 --- a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 +++ b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 @@ -6,6 +6,7 @@ import Postbox
@@ -362,7 +362,7 @@ index 3596b9d8f..a941e9593 100644
                  let entry = GalleryEntry(entry: MessageHistoryEntry(message: message, isRead: false, location: nil, monthLocation: nil, attributes: MutableMessageHistoryEntryAttributes(authorIsContact: false)))
 -                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: true, isSecret: true, playbackRate: { nil }, peerIsCopyProtected: true, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
 +                let allowCaptureOfViewOnceMedia = self.allowsCaptureOfViewOnceMedia(message)
-+                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: true, isSecret: true, allowCaptureOfViewOnceMedia: allowCaptureOfViewOnceMedia, playbackRate: { nil }, peerIsCopyProtected: !allowCaptureOfViewOnceMedia, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
++                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: !allowCaptureOfViewOnceMedia, isSecret: true, allowCaptureOfViewOnceMedia: allowCaptureOfViewOnceMedia, playbackRate: { nil }, peerIsCopyProtected: !allowCaptureOfViewOnceMedia, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
                      if let self {
                          if self.currentNodeMessageIsViewOnce || (duration < 30.0 && !self.currentMessageIsDismissed) {
                              if let node = self.controllerNode.pager.centralItemNode() as? UniversalVideoGalleryItemNode {
@@ -613,7 +613,7 @@ index e28f7b900..5642b5469 100644
  
  table TelegramMediaResource {
 diff --git a/submodules/TelegramCore/Sources/Account/Account.swift b/submodules/TelegramCore/Sources/Account/Account.swift
-index af6b6078e..44e74f4c2 100644
+index af6b6078e..92d072a01 100644
 --- a/submodules/TelegramCore/Sources/Account/Account.swift
 +++ b/submodules/TelegramCore/Sources/Account/Account.swift
 @@ -1261,6 +1261,7 @@ public class Account {
@@ -632,7 +632,7 @@ index af6b6078e..44e74f4c2 100644
          
          self.peerInputActivityManager = PeerInputActivityManager()
          
-@@ -1373,7 +1375,12 @@ public class Account {
+@@ -1373,11 +1375,16 @@ public class Account {
          
          self.contactSyncManager = ContactSyncManager(postbox: postbox, network: network, accountPeerId: peerId, stateManager: self.stateManager)
          self.localInputActivityManager = PeerInputActivityManager()
@@ -646,6 +646,11 @@ index af6b6078e..44e74f4c2 100644
          #if os(iOS)
          // iOS only for now: the Rust engine is the macOS default, and its online keepalive cadence
          // (pings every 1-2 s while the account is in front) has not been measured there.
+-        network.isUserOnline.set(self.shouldKeepOnlinePresence.get())
++        network.isUserOnline.set(effectiveOnlinePresence)
+         #endif
+         let _ = (postbox.transaction { transaction -> Void in
+             transaction.updatePeerPresencesInternal(presences: [peerId: TelegramUserPresence(status: .present(until: Int32.max - 1), lastActivity: 0)], merge: { _, updated in return updated })
 @@ -1392,6 +1399,9 @@ public class Account {
          self.messageMediaPreuploadManager = MessageMediaPreuploadManager()
          self.pendingMessageManager = PendingMessageManager(network: network, postbox: postbox, accountPeerId: peerId, auxiliaryMethods: auxiliaryMethods, stateManager: self.stateManager, localInputActivityManager: self.localInputActivityManager, messageMediaPreuploadManager: self.messageMediaPreuploadManager, revalidationContext: self.mediaReferenceRevalidationContext)
@@ -1886,7 +1891,7 @@ index 9878c79e3..878c07e8c 100644
 +    return signal
  }
 diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift
-index fe15eed4b..2dd97d70a 100644
+index fe15eed4b..099c6fc45 100644
 --- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift
 +++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/TelegramEngineMessages.swift
 @@ -107,6 +107,42 @@ public extension TelegramEngine {
@@ -1940,13 +1945,19 @@ index fe15eed4b..2dd97d70a 100644
              return _internal_requestMessageActionCallback(account: self.account, messageId: messageId, isGame: isGame, password: password, data: data)
          }
  
-@@ -171,6 +208,67 @@ public extension TelegramEngine {
+@@ -171,6 +208,73 @@ public extension TelegramEngine {
              return _internal_deleteMessages(transaction: transaction, mediaBox: self.account.postbox.mediaBox, ids: ids, deleteMedia: true, manualAddMessageThreadStatsDifference: nil)
          }
  
 +        public func archivedMessageVersions(id: EngineMessage.Id) -> Signal<[EngineMessage], NoError> {
 +            return self.account.postbox.transaction { transaction -> [EngineMessage] in
 +                return _internal_archivedMessageVersions(transaction: transaction, id: id).map(EngineMessage.init)
++            }
++        }
++
++        public func deletedMessagesForPeer(peerId: EnginePeer.Id) -> Signal<[EngineMessage], NoError> {
++            return self.account.postbox.transaction { transaction -> [EngineMessage] in
++                return _internal_deletedMessagesForPeer(transaction: transaction, peerId: peerId).map(EngineMessage.init)
 +            }
 +        }
 +
@@ -2008,7 +2019,7 @@ index fe15eed4b..2dd97d70a 100644
          public func deleteAllMessagesWithAuthor(peerId: PeerId, authorId: PeerId, namespace: MessageId.Namespace) -> Signal<Never, NoError> {
              return self.account.postbox.transaction { transaction -> Void in
                  _internal_deleteAllMessagesWithAuthor(transaction: transaction, mediaBox: self.account.postbox.mediaBox, peerId: peerId, authorId: authorId, namespace: namespace)
-@@ -282,8 +380,12 @@ public extension TelegramEngine {
+@@ -282,8 +386,12 @@ public extension TelegramEngine {
              return _internal_getMessagesLoadIfNecessary(messageIds, postbox: self.account.postbox, network: self.account.network, accountPeerId: self.account.peerId, strategy: strategy)
          }
  
@@ -2023,7 +2034,7 @@ index fe15eed4b..2dd97d70a 100644
          }
  
          public func installInteractiveReadMessagesAction(peerId: PeerId, threadId: Int64?) -> Disposable {
-@@ -295,6 +397,7 @@ public extension TelegramEngine {
+@@ -295,6 +403,7 @@ public extension TelegramEngine {
          }
  
          public func requestMessageSelectPollOption(messageId: MessageId, opaqueIdentifiers: [Data]) -> Signal<TelegramMediaPoll?, RequestMessageSelectPollOptionError> {
@@ -2031,7 +2042,7 @@ index fe15eed4b..2dd97d70a 100644
              return _internal_requestMessageSelectPollOption(account: self.account, messageId: messageId, opaqueIdentifiers: opaqueIdentifiers)
          }
  
-@@ -451,6 +554,9 @@ public extension TelegramEngine {
+@@ -451,6 +560,9 @@ public extension TelegramEngine {
              ids: [EngineMessage.Id],
              reactions: [UpdateMessageReaction]
          ) {
@@ -2041,7 +2052,7 @@ index fe15eed4b..2dd97d70a 100644
              let _ = updateMessageReactionsInteractively(
                  account: self.account,
                  messageIds: ids,
-@@ -465,6 +571,9 @@ public extension TelegramEngine {
+@@ -465,6 +577,9 @@ public extension TelegramEngine {
              ids: [EngineMessage.Id],
              reactions: [UpdateMessageReaction]
          ) {
@@ -6476,7 +6487,7 @@ diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/DeletedMess
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/DeletedMessageArchive.swift
-@@ -0,0 +1,1015 @@
+@@ -0,0 +1,1031 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
@@ -7398,6 +7409,22 @@ new file mode 100644
 +    var result = attribute.versionIds.compactMap(transaction.getMessage)
 +    result.append(message)
 +    return result
++}
++
++func _internal_deletedMessagesForPeer(transaction: Transaction, peerId: PeerId) -> [Message] {
++    guard let index = transaction.getPreferencesEntry(key: PreferencesKeys.deletedMessageArchiveIndex)?.get(DeletedMessageArchiveIndex.self) else {
++        return []
++    }
++    return index.messageIds.compactMap { entry -> Message? in
++        let id = entry.messageId
++        guard id.peerId == peerId, id.namespace == Namespaces.Message.Archived,
++              let message = transaction.getMessage(id),
++              let attribute = message.archivedMessageAttribute,
++              attribute.deletedAt != nil, !attribute.pendingBurn else {
++            return nil
++        }
++        return message
++    }.sorted { $0.timestamp > $1.timestamp }
 +}
 +
 +func _internal_clearDeletedMessageArchive(transaction: Transaction) {
