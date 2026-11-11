@@ -1,0 +1,53 @@
+name: Ayu interface quick checks
+on:
+  push:
+    branches: [ayu-interface-check]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify build helper
+        run: python3 -B -m unittest discover -s tests -v
+      - name: Restore pinned source
+        run: |
+          git init source
+          git -C source remote add origin https://github.com/TelegramMessenger/Telegram-iOS.git
+          git -C source fetch --depth=1 origin fb0e62ba8a147f0821da6aa63c09da7d79a10111
+          git -C source checkout --detach FETCH_HEAD
+          python3 -c 'import hashlib,json,pathlib; p=pathlib.Path("ayu-personal.patch"); assert hashlib.sha256(p.read_bytes()).hexdigest()==json.loads(pathlib.Path("source-manifest.json").read_text())["patch_sha256"]'
+          git -C source apply --check ../ayu-personal.patch
+          git -C source apply ../ayu-personal.patch
+      - name: Parse Swift and check privacy policy
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, subprocess, sys
+          manifest = json.loads(pathlib.Path("source-manifest.json").read_text())
+          paths = [p for p in manifest["changed_files"] if p.endswith(".swift")]
+          failed = []
+          for path in paths:
+              result = subprocess.run(["swiftc", "-frontend", "-parse", str(pathlib.Path("source") / path)], capture_output=True, text=True)
+              if result.returncode:
+                  failed.append(path)
+                  print("FAILED", path, result.stderr[:8000], flush=True)
+          print(f"Parsed {len(paths)} changed Swift files; {len(failed)} failures", flush=True)
+          if failed:
+              sys.exit(1)
+          subprocess.run([sys.executable, "Ayu/tools/project.py", "test-policy"], cwd="source", check=True)
+          PY
+      - name: Test settings and isolated Swift logic
+        run: |
+          python3 tools/check_settings_api.py source
+          python3 host-tests/test_deleted_messages_for_peer.py
+          python3 host-tests/test_policies.py
+          python3 host-tests/test_archive_journal.py
+          python3 host-tests/test_burn_transactions.py
+          python3 host-tests/test_archive_deletion_coordinator.py
+          python3 host-tests/test_burn_request.py
+          python3 host-tests/test_snapshot_coordinator.py
