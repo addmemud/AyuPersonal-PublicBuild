@@ -74,6 +74,102 @@ index 1fca36ca9..aaef88b49 100644
          return true
      }
  }
+diff --git a/submodules/ChatListUI/Sources/ChatListController.swift b/submodules/ChatListUI/Sources/ChatListController.swift
+index 5bdff8a69..b7e115357 100644
+--- a/submodules/ChatListUI/Sources/ChatListController.swift
++++ b/submodules/ChatListUI/Sources/ChatListController.swift
+@@ -144,6 +144,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+     
+     private var badgeDisposable: Disposable?
+     private var badgeIconDisposable: Disposable?
++    private var ghostModeSettingsDisposable: Disposable?
++    private var ghostModeEnabled = false
+     
+     private var didAppear = false
+     private var dismissSearchOnDisappear = false
+@@ -296,6 +298,15 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+         )
+                 
+         super.init(context: context, navigationBarPresentationData: nil)
++
++        self.ghostModeSettingsDisposable = (context.engine.messages.ghostModeSettings()
++        |> deliverOnMainQueue).start(next: { [weak self] settings in
++            guard let self, self.ghostModeEnabled != settings.isEnabled else { return }
++            self.ghostModeEnabled = settings.isEnabled
++            if self.isNodeLoaded {
++                self.requestLayout(transition: .immediate)
++            }
++        })
+         
+         self.accessoryPanelContainer = ASDisplayNode()
+         
+@@ -806,6 +817,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+         self.openMessageFromSearchDisposable.dispose()
+         self.badgeDisposable?.dispose()
+         self.badgeIconDisposable?.dispose()
++        self.ghostModeSettingsDisposable?.dispose()
+         self.passcodeLockTooltipDisposable.dispose()
+         self.suggestLocalizationDisposable.dispose()
+         self.suggestAutoarchiveDisposable.dispose()
+@@ -2887,6 +2899,24 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+     func updateHeaderContent() -> (primaryContent: ChatListHeaderComponent.Content?, secondaryContent: ChatListHeaderComponent.Content?) {
+         var primaryContent: ChatListHeaderComponent.Content?
+         if let primaryContext = self.primaryContext {
++            var headerButtons = primaryContext.rightButtons
++            if case .chatList(.root) = self.location {
++                headerButtons.append(NavigationBarComponent.Button(
++                    id: "ayu-ghost-mode",
++                    content: .text(title: "👻", isBold: false),
++                    tint: self.ghostModeEnabled ? .accent : .generic,
++                    requiresOwnSection: true,
++                    staysInRow: true,
++                    action: { [weak self] _ in
++                        guard let self else { return }
++                        let _ = self.context.engine.messages.updateGhostModeSettings { current in
++                            var updated = current
++                            updated.isEnabled.toggle()
++                            return updated
++                        }.startStandalone()
++                    }
++                ))
++            }
+             var displayBackButton: Bool = false
+             if self.previousItem != nil {
+                 displayBackButton = true
+@@ -2896,7 +2926,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+                 titleComponent: primaryContext.chatTitleComponent.flatMap { AnyComponent<Empty>($0) },
+                 chatListTitle: primaryContext.chatListTitle,
+                 leftButton: primaryContext.leftButton,
+-                rightButtons: primaryContext.rightButtons,
++                rightButtons: headerButtons,
+                 backPressed: displayBackButton ? { [weak self] in
+                     guard let self else {
+                         return
+@@ -3787,7 +3817,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+         self.dismiss()
+     }
+     
+-    public static func openMoreMenu(context: AccountContext, peerId: EnginePeer.Id, sourceController: ViewController, isViewingAsTopics: Bool, sourceView: UIView, gesture: ContextGesture?) {
++    public static func openMoreMenu(context: AccountContext, peerId: EnginePeer.Id, sourceController: ViewController, isViewingAsTopics: Bool, sourceView: UIView, gesture: ContextGesture?, openDeletedMessages: (() -> Void)? = nil) {
+         let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: peerId))
+         |> deliverOnMainQueue).startStandalone(next: { [sourceController] peer in
+             guard case let .channel(channel) = peer else {
+@@ -3946,6 +3976,15 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController
+             }
+ 
+             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++            if let openDeletedMessages {
++                let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
++                items.append(.action(ContextMenuActionItem(text: isRussian ? "Удалённые сообщения" : "Deleted Messages", icon: { theme in
++                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.primaryColor)
++                }, action: { _, dismiss in
++                    dismiss(.dismissWithoutContent)
++                    openDeletedMessages()
++                })))
++            }
+             let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
+             sourceController.presentInGlobalOverlay(contextController)
+         })
 diff --git a/submodules/GalleryUI/Sources/GalleryController.swift b/submodules/GalleryUI/Sources/GalleryController.swift
 index 5998c8611..1b48c88e7 100644
 --- a/submodules/GalleryUI/Sources/GalleryController.swift
@@ -193,7 +289,7 @@ index a1f9746c9..7895f55aa 100644
          
          var title: String?
 diff --git a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
-index 3596b9d8f..8099e4d6d 100644
+index 3596b9d8f..a8289f663 100644
 --- a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 +++ b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 @@ -6,6 +6,7 @@ import Postbox
@@ -366,7 +462,18 @@ index 3596b9d8f..8099e4d6d 100644
                      if let self {
                          if self.currentNodeMessageIsViewOnce || (duration < 30.0 && !self.currentMessageIsDismissed) {
                              if let node = self.controllerNode.pager.centralItemNode() as? UniversalVideoGalleryItemNode {
-@@ -597,6 +677,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -539,7 +619,9 @@ public final class SecretMediaPreviewController: ViewController {
+                             self.dismiss(forceAway: false)
+                         }
+                     }
+-                }, sendSticker: nil, present: { _, _ in }) else {
++                }, sendSticker: nil, present: { [weak self] controller, arguments in
++                    self?.present(controller, in: .window(.root), with: arguments, blockInteraction: true)
++                }) else {
+                     self._ready.set(.single(true))
+                     return
+                 }
+@@ -597,6 +679,7 @@ public final class SecretMediaPreviewController: ViewController {
              }
              self.currentMessageIsDismissed = true
          }
@@ -958,6 +1065,21 @@ index bdc2ef909..c282a5975 100644
      } else if let secretFileResource = resource as? SecretFileMediaResource {
          return .single(.dataPart(resourceOffset: 0, data: Data(), range: 0 ..< 0, complete: false))
          |> then(fetchSecretFileResource(
+diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+index 7256668bf..f88a0fe0b 100644
+--- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
++++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
+@@ -16,7 +16,9 @@ private final class AccountPresenceManagerImpl {
+     private let currentRequestDisposable = MetaDisposable()
+     private var onlineTimer: SignalKitTimer?
+     
+-    private var wasOnline: Bool = false
++    // The server's state is unknown before the first presence update is sent.
++    // In particular, a ghost-enabled launch must send the initial offline value.
++    private var wasOnline: Bool?
+     
+     init(queue: Queue, shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
+         self.queue = queue
 diff --git a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift b/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
 index 713bf6f41..d75921856 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
@@ -2430,8 +2552,27 @@ index a4873696b..a59913bf0 100644
      items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_ChatSettings, icon: PresentationResourcesSettings.dataAndStorage, action: {
          interaction.openSettings(.dataAndStorage)
      }))
+diff --git a/submodules/TelegramUI/Sources/Chat/ChatControllerOpenPeer.swift b/submodules/TelegramUI/Sources/Chat/ChatControllerOpenPeer.swift
+index e1e8b94b0..a38aa142f 100644
+--- a/submodules/TelegramUI/Sources/Chat/ChatControllerOpenPeer.swift
++++ b/submodules/TelegramUI/Sources/Chat/ChatControllerOpenPeer.swift
+@@ -349,6 +349,14 @@ extension ChatControllerImpl {
+         let strings = self.presentationData.strings
+         
+         var items: [ContextMenuItem] = []
++
++        let isRussian = strings.primaryComponent.languageCode.hasPrefix("ru")
++        items.append(.action(ContextMenuActionItem(text: isRussian ? "Удалённые сообщения" : "Deleted Messages", icon: { theme in
++            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.primaryColor)
++        }, action: { [weak self] _, dismiss in
++            dismiss(.dismissWithoutContent)
++            self?.openDeletedMessagesJournal(peerId: peerId)
++        })))
+         
+         if let _ = self.chatLocation.threadId {
+         } else {
 diff --git a/submodules/TelegramUI/Sources/ChatController.swift b/submodules/TelegramUI/Sources/ChatController.swift
-index 5fe58bbf5..fd92b06b5 100644
+index 5fe58bbf5..53d78d352 100644
 --- a/submodules/TelegramUI/Sources/ChatController.swift
 +++ b/submodules/TelegramUI/Sources/ChatController.swift
 @@ -949,7 +949,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
@@ -2443,7 +2584,57 @@ index 5fe58bbf5..fd92b06b5 100644
                              self.openViewOnceMediaMessage(EngineMessage(message))
                              return false
                          }
-@@ -9060,6 +9060,27 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+@@ -6415,7 +6415,19 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+                     source = .reference(ChatControllerContextReferenceContentSource(controller: strongSelf, sourceView: node.view, insets: .zero))
+                 }
+                 
+-                let contextController = makeContextController(presentationData: strongSelf.presentationData, source: source, items: items |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
++                let contextController = makeContextController(presentationData: strongSelf.presentationData, source: source, items: items |> map { [weak self] originalItems in
++                    var menuItems = originalItems
++                    if peer.id.namespace != Namespaces.Peer.SecretChat {
++                        let isRussian = strongSelf.presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
++                        menuItems.append(.action(ContextMenuActionItem(text: isRussian ? "Удалённые сообщения" : "Deleted Messages", icon: { theme in
++                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.actionSheet.primaryTextColor)
++                        }, action: { _, dismiss in
++                            dismiss(.dismissWithoutContent)
++                            self?.openDeletedMessagesJournal(peerId: peer.id)
++                        })))
++                    }
++                    return ContextController.Items(content: .list(menuItems))
++                }, gesture: gesture)
+                 contextController.dismissed = { [weak self] in
+                     self?.canReadHistory.set(true)
+                 }
+@@ -6446,7 +6458,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+             } else if peerId.namespace == Namespaces.Peer.CloudUser {
+                 self.openBotForumMoreMenu(sourceView: self.navigationBar?.navigationButtonContextContainer(sourceView: sourceNode.view) ?? sourceNode.view, gesture: gesture)
+             } else {
+-                ChatListControllerImpl.openMoreMenu(context: self.context, peerId: peerId, sourceController: self, isViewingAsTopics: false, sourceView: sourceNode.view, gesture: gesture)
++                ChatListControllerImpl.openMoreMenu(context: self.context, peerId: peerId, sourceController: self, isViewingAsTopics: false, sourceView: sourceNode.view, gesture: gesture, openDeletedMessages: { [weak self] in
++                    self?.openDeletedMessagesJournal(peerId: peerId)
++                })
+             }
+         }
+         self.moreBarButton.addTarget(self, action: #selector(self.moreButtonPressed), forControlEvents: .touchUpInside)
+@@ -8644,6 +8658,17 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+         self.moreBarButton.play()
+         self.moreBarButton.contextAction?(self.moreBarButton.containerNode, nil)
+     }
++
++    func openDeletedMessagesJournal(peerId: EnginePeer.Id) {
++        let controller = deletedMessagesJournalController(context: self.context, peerId: peerId, open: { [weak self] messageId in
++            guard let self else { return }
++            if let navigationController = self.navigationController as? NavigationController {
++                let _ = navigationController.popToViewController(self, animated: false)
++            }
++            self.navigateToMessage(from: nil, to: .id(messageId, NavigateToMessageParams(timestamp: nil, quote: nil)), forceInCurrentChat: true)
++        })
++        self.push(controller)
++    }
+     
+     public func beginClearHistory(type: InteractiveHistoryClearingType) {
+         guard case let .peer(peerId) = self.chatLocation else {
+@@ -9060,6 +9085,27 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
      }
          
      func transformEnqueueMessages(_ messages: [EnqueueMessage], silentPosting: Bool, scheduleTime: Int32? = nil, repeatPeriod: Int32? = nil, postpone: Bool = false) -> [EnqueueMessage] {
@@ -2471,7 +2662,7 @@ index 5fe58bbf5..fd92b06b5 100644
          var defaultThreadId: Int64?
          var defaultReplyMessageSubject: EngineMessageReplySubject?
          switch self.chatLocation {
-@@ -9131,18 +9152,18 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
+@@ -9131,18 +9177,18 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                      attributes.append(PaidStarsMessageAttribute(stars: sendPaidMessageStars, postponeSending: effectivePostpone))
                  }
                  
@@ -3892,7 +4083,7 @@ diff --git a/submodules/SettingsUI/Sources/AyuSettingsController.swift b/submodu
 new file mode 100644
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/AyuSettingsController.swift
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,129 @@
 +import Foundation
 +import Display
 +import SwiftSignalKit
@@ -3905,11 +4096,13 @@ new file mode 100644
 +    let update: (AyuActivityPrivacySettings.Option, Bool) -> Void
 +    let openGhost: () -> Void
 +    let openArchive: () -> Void
++    let updateViewOnce: (Bool) -> Void
 +
-+    init(update: @escaping (AyuActivityPrivacySettings.Option, Bool) -> Void, openGhost: @escaping () -> Void, openArchive: @escaping () -> Void) {
++    init(update: @escaping (AyuActivityPrivacySettings.Option, Bool) -> Void, openGhost: @escaping () -> Void, openArchive: @escaping () -> Void, updateViewOnce: @escaping (Bool) -> Void) {
 +        self.update = update
 +        self.openGhost = openGhost
 +        self.openArchive = openArchive
++        self.updateViewOnce = updateViewOnce
 +    }
 +}
 +
@@ -3917,15 +4110,25 @@ new file mode 100644
 +    case header(String)
 +    case screen(Int32, String, Bool)
 +    case option(Int32, AyuActivityPrivacySettings.Option, String, Bool)
++    case viewOnceHeader(String)
++    case viewOnce(Bool)
 +    case footer(String)
 +
-+    var section: ItemListSectionId { return 0 }
++    var section: ItemListSectionId {
++        switch self {
++        case .viewOnceHeader, .viewOnce: return 1
++        case .footer: return 2
++        default: return 0
++        }
++    }
 +
 +    var stableId: Int32 {
 +        switch self {
 +        case .header: return 0
 +        case let .screen(id, _, _): return id
 +        case let .option(id, _, _, _): return id
++        case .viewOnceHeader: return 12
++        case .viewOnce: return 13
 +        case .footer: return 100
 +        }
 +    }
@@ -3947,6 +4150,13 @@ new file mode 100644
 +            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, maximumNumberOfLines: 0, sectionId: self.section, style: .blocks, updated: { value in
 +                arguments.update(option, value)
 +            })
++        case let .viewOnceHeader(text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
++        case let .viewOnce(value):
++            let strings = presentationData.strings.localFeatures.ghostMode
++            return ItemListSwitchItem(presentationData: presentationData, title: strings.keepViewOnceMedia, text: strings.keepViewOnceMediaInfo, value: value, enabled: true, maximumNumberOfLines: 0, sectionId: self.section, style: .blocks, updated: { value in
++                arguments.updateViewOnce(value)
++            })
 +        case let .footer(text):
 +            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
 +        }
@@ -3961,11 +4171,17 @@ new file mode 100644
 +        pushController?(ghostModeSettingsController(context: context))
 +    }, openArchive: {
 +        pushController?(localMessageArchiveSettingsController(context: context))
++    }, updateViewOnce: { value in
++        let _ = context.engine.messages.updateGhostModeSettings { current in
++            var updated = current
++            updated.keepViewOnceMedia = value
++            return updated
++        }.startStandalone()
 +    })
 +
-+    let state = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, context.engine.accountData.ayuActivityPrivacySettings())
++    let state = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, context.engine.accountData.ayuActivityPrivacySettings(), context.engine.messages.ghostModeSettings())
 +    |> deliverOnMainQueue
-+    |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
++    |> map { presentationData, settings, ghostSettings -> (ItemListControllerState, (ItemListNodeState, Any)) in
 +        let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
 +        let entries: [AyuSettingsEntry] = [
 +            .header(isRussian ? "ИНДИКАТОРЫ ДЕЙСТВИЙ" : "ACTIVITY INDICATORS"),
@@ -3980,6 +4196,8 @@ new file mode 100644
 +            .option(9, .lastActivity, isRussian ? "Показывать примерную активность" : "Show approximate activity", settings.showLastActivityEstimate),
 +            .option(10, .silentByDefault, isRussian ? "Отправлять без звука по умолчанию" : "Send without sound by default", settings.silentByDefault),
 +            .option(11, .scheduleByDefault, isRussian ? "Отправлять с задержкой (12–30 сек.)" : "Delay outgoing messages (12–30 sec.)", settings.scheduleByDefault),
++            .viewOnceHeader(isRussian ? "ОДНОРАЗОВЫЕ МЕДИА" : "VIEW-ONCE MEDIA"),
++            .viewOnce(ghostSettings.keepViewOnceMedia),
 +            .footer(isRussian
 +                ? "Настройки действуют только для этого аккаунта в этом приложении. Скрытие индикаторов не отключает отправку файлов и сообщений. Режим призрака настраивается отдельно; активность с других устройств может быть видна."
 +                : "These settings apply only to this account in this app. Hiding indicators does not stop messages or files from sending. Ghost Mode is configured separately; activity from other devices may remain visible.")
@@ -4419,7 +4637,7 @@ diff --git a/submodules/SettingsUI/Sources/GhostModeSettingsController.swift b/s
 new file mode 100644
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/GhostModeSettingsController.swift
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,189 @@
 +import AccountContext
 +import ComponentFlow
 +import Display
@@ -4452,7 +4670,6 @@ new file mode 100644
 +    case suppressStories(Bool, Bool)
 +    case suppressOnline(Bool, Bool)
 +    case suppressTyping(Bool, Bool)
-+    case keepViewOnceMedia(Bool, Bool)
 +    case revealOnInteractions(Bool, Bool)
 +    case autoOffline(Bool, Bool)
 +
@@ -4460,7 +4677,7 @@ new file mode 100644
 +        switch self {
 +        case .enabled:
 +            return GhostModeSection.master.rawValue
-+        case .suppressRead, .suppressStories, .suppressOnline, .suppressTyping, .keepViewOnceMedia:
++        case .suppressRead, .suppressStories, .suppressOnline, .suppressTyping:
 +            return GhostModeSection.privacy.rawValue
 +        case .revealOnInteractions, .autoOffline:
 +            return GhostModeSection.behavior.rawValue
@@ -4474,7 +4691,6 @@ new file mode 100644
 +        case .suppressStories: return 2
 +        case .suppressOnline: return 3
 +        case .suppressTyping: return 4
-+        case .keepViewOnceMedia: return 5
 +        case .revealOnInteractions: return 6
 +        case .autoOffline: return 7
 +        }
@@ -4488,7 +4704,6 @@ new file mode 100644
 +             let (.suppressStories(lhsValue, lhsEnabled), .suppressStories(rhsValue, rhsEnabled)),
 +             let (.suppressOnline(lhsValue, lhsEnabled), .suppressOnline(rhsValue, rhsEnabled)),
 +             let (.suppressTyping(lhsValue, lhsEnabled), .suppressTyping(rhsValue, rhsEnabled)),
-+             let (.keepViewOnceMedia(lhsValue, lhsEnabled), .keepViewOnceMedia(rhsValue, rhsEnabled)),
 +             let (.revealOnInteractions(lhsValue, lhsEnabled), .revealOnInteractions(rhsValue, rhsEnabled)),
 +             let (.autoOffline(lhsValue, lhsEnabled), .autoOffline(rhsValue, rhsEnabled)):
 +            return lhsValue == rhsValue && lhsEnabled == rhsEnabled
@@ -4552,12 +4767,6 @@ new file mode 100644
 +                current.suppressTypingStatus = value
 +                return current
 +            })
-+        case let .keepViewOnceMedia(value, enabled):
-+            return switchItem(strings.keepViewOnceMedia, strings.keepViewOnceMediaInfo, value, enabled, { current, value in
-+                var current = current
-+                current.keepViewOnceMedia = value
-+                return current
-+            })
 +        case let .revealOnInteractions(value, enabled):
 +            return switchItem(strings.revealOnInteractions, strings.revealOnInteractionsInfo, value, enabled, { current, value in
 +                var current = current
@@ -4593,7 +4802,6 @@ new file mode 100644
 +            .suppressStories(settings.suppressStoryReadReceipts, enabled),
 +            .suppressOnline(settings.suppressOnlineStatus, enabled),
 +            .suppressTyping(settings.suppressTypingStatus, enabled),
-+            .keepViewOnceMedia(settings.keepViewOnceMedia, true),
 +            .revealOnInteractions(settings.revealOnInteractions, enabled),
 +            .autoOffline(settings.goOfflineAutomatically, enabled)
 +        ]
@@ -8416,4 +8624,75 @@ new file mode 100644
 +    var localFeatures: LocalFeatureStrings {
 +        return LocalFeatureStrings(strings: self)
 +    }
++}
+diff --git a/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swift b/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swift
+new file mode 100644
+--- /dev/null
++++ b/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swift
+@@ -0,0 +1,66 @@
++import Foundation
++import Display
++import SwiftSignalKit
++import TelegramCore
++import TelegramPresentationData
++import ItemListUI
++import AccountContext
++
++private final class DeletedJournalArguments {
++    let open: (EngineMessage.Id) -> Void
++
++    init(open: @escaping (EngineMessage.Id) -> Void) {
++        self.open = open
++    }
++}
++
++private enum DeletedJournalEntry: ItemListNodeEntry {
++    case empty(String)
++    case message(Int32, EngineMessage.Id, String)
++
++    var section: ItemListSectionId { return 0 }
++    var stableId: Int32 {
++        switch self {
++        case .empty: return 0
++        case let .message(index, _, _): return index + 1
++        }
++    }
++
++    static func < (lhs: DeletedJournalEntry, rhs: DeletedJournalEntry) -> Bool {
++        return lhs.stableId < rhs.stableId
++    }
++
++    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
++        let arguments = arguments as! DeletedJournalArguments
++        switch self {
++        case let .empty(text):
++            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
++        case let .message(_, id, title):
++            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: "", sectionId: self.section, style: .blocks, action: {
++                arguments.open(id)
++            })
++        }
++    }
++}
++
++func deletedMessagesJournalController(context: AccountContext, peerId: EnginePeer.Id, open: @escaping (EngineMessage.Id) -> Void) -> ViewController {
++    let arguments = DeletedJournalArguments(open: open)
++    let state = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, context.engine.messages.deletedMessagesForPeer(peerId: peerId))
++    |> deliverOnMainQueue
++    |> map { presentationData, messages -> (ItemListControllerState, (ItemListNodeState, Any)) in
++        let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
++        let entries: [DeletedJournalEntry]
++        if messages.isEmpty {
++            entries = [.empty(isRussian ? "Нет сохранённых удалённых сообщений" : "No saved deleted messages")]
++        } else {
++            entries = messages.enumerated().map { index, message in
++                let title = message.text.isEmpty ? (isRussian ? "Медиа" : "Media") : message.text
++                return .message(Int32(index), message.id, title)
++            }
++        }
++        let presentation = ItemListPresentationData(presentationData)
++        let state = ItemListControllerState(presentationData: presentation, title: .text(isRussian ? "Удалённые сообщения" : "Deleted Messages"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        return (state, (ItemListNodeState(presentationData: presentation, entries: entries, style: .blocks, animateChanges: false), arguments))
++    }
++    return ItemListController(context: context, state: state)
 +}
