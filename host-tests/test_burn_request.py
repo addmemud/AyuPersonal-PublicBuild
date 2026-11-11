@@ -40,6 +40,8 @@ infix operator |>: AdditionPrecedence
 func |> <T, U>(value: T, transform: (T) -> U) -> U { transform(value) }
 final class Queue { static func concurrentDefaultQueue() -> Queue { Queue() } }
 func deliverOn<T, E: Error>(_ queue: Queue) -> (Signal<T, E>) -> Signal<T, E> { { $0 } }
+// This synchronous double cannot model elapsed time; device tests must cover it.
+func timeout<T, E: Error>(_ seconds: Double, queue: Queue, alternate: Signal<T, E>) -> (Signal<T, E>) -> Signal<T, E> { { $0 } }
 func map<T, U, E: Error>(_ f: @escaping (T) -> U) -> (Signal<T, E>) -> Signal<U, E> {
     { signal in Signal<U, E>(result: signal.result.map(f)) }
 }
