@@ -1438,6 +1438,35 @@ index ba2fc52d7..793207d8b 100644
                      }
                  }
              }
+diff --git a/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift b/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift
+index 7c4556016..664dbedb6 100644
+--- a/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift
++++ b/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift
+@@ -1,6 +1,15 @@
+ import Foundation
+ import Postbox
+ 
++// Server refreshes omit local history; prefer any history created for this edit.
++func ayuPreservingArchiveHistory(previous: [MessageAttribute], incoming: [MessageAttribute]) -> [MessageAttribute] {
++    var result = incoming
++    if !result.contains(where: { $0 is ArchivedMessageAttribute }), let history = previous.first(where: { $0 is ArchivedMessageAttribute }) {
++        result.append(history)
++    }
++    return result
++}
++
+ /// The server's copy of a message the account already stores, keeping what the server's copy does not carry:
+ /// the outgoing live-location tag, the stored Incoming flag, a translation while the text and entities are
+ /// unchanged, a resolved fact check over a pending one with the same hash, and unlocked paid media.
+@@ -9,7 +18,7 @@ import Postbox
+ func mergedServerMessageUpdate(previous previousMessage: Message, updated message: StoreMessage) -> StoreMessage {
+     var updatedFlags = message.flags
+     var updatedLocalTags = message.localTags
+-    var updatedAttributes = message.attributes
++    var updatedAttributes = ayuPreservingArchiveHistory(previous: previousMessage.attributes, incoming: message.attributes)
+     if previousMessage.localTags.contains(.OutgoingLiveLocation) {
+         updatedLocalTags.insert(.OutgoingLiveLocation)
+     }
 diff --git a/submodules/TelegramCore/Sources/SyncCore/SyncCore_CloudFileMediaResource.swift b/submodules/TelegramCore/Sources/SyncCore/SyncCore_CloudFileMediaResource.swift
 index 417ba5d21..93b010cc2 100644
 --- a/submodules/TelegramCore/Sources/SyncCore/SyncCore_CloudFileMediaResource.swift
@@ -2328,6 +2357,38 @@ index fe15eed4b..099c6fc45 100644
              let _ = updateMessageReactionsInteractively(
                  account: self.account,
                  messageIds: ids,
+diff --git a/submodules/TelegramCore/Tests/ServerMessageMergeTests.swift b/submodules/TelegramCore/Tests/ServerMessageMergeTests.swift
+index d9cc47c89..d0b6e4673 100644
+--- a/submodules/TelegramCore/Tests/ServerMessageMergeTests.swift
++++ b/submodules/TelegramCore/Tests/ServerMessageMergeTests.swift
+@@ -31,6 +31,27 @@ final class ServerMessageMergeTests: XCTestCase {
+         XCTAssertFalse(merged.attributes.contains(where: { $0 is TranslationMessageAttribute }))
+     }
+ 
++    func testLocalEditHistorySurvivesServerRefresh() {
++        let version = MessageId(peerId: self.channel, namespace: Namespaces.Message.ArchivedVersion, id: 11)
++        let history = ArchivedMessageAttribute(originalMessageId: self.messageId, versionIds: [version], deletedAt: nil, sessionId: 1)
++        let merged = mergedServerMessageUpdate(previous: self.stored(text: "Before", attributes: [history], media: []), updated: self.fromServer(text: "After", media: []))
++        let saved = merged.attributes.compactMap { $0 as? ArchivedMessageAttribute }
++        XCTAssertEqual(saved.count, 1)
++        XCTAssertEqual(saved.first?.versionIds, [version])
++    }
++
++    func testNewEditHistoryReplacesPreviousHistory() {
++        let older = MessageId(peerId: self.channel, namespace: Namespaces.Message.ArchivedVersion, id: 11)
++        let newer = MessageId(peerId: self.channel, namespace: Namespaces.Message.ArchivedVersion, id: 12)
++        let previous = ArchivedMessageAttribute(originalMessageId: self.messageId, versionIds: [older], deletedAt: nil, sessionId: 1)
++        let current = ArchivedMessageAttribute(originalMessageId: self.messageId, versionIds: [older, newer], deletedAt: nil, sessionId: 1)
++        let updated = self.fromServer(text: "After", media: []).withUpdatedAttributes([current])
++        let merged = mergedServerMessageUpdate(previous: self.stored(text: "Before", attributes: [previous], media: []), updated: updated)
++        let saved = merged.attributes.compactMap { $0 as? ArchivedMessageAttribute }
++        XCTAssertEqual(saved.count, 1)
++        XCTAssertEqual(saved.first?.versionIds, [older, newer])
++    }
++
+     // A purchased paid post must not fall back to its locked preview.
+     func testUnlockedPaidMediaSurvives() {
+         let image = TelegramMediaImage(imageId: MediaId(namespace: Namespaces.Media.CloudImage, id: 1), representations: [], immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
 diff --git a/submodules/TelegramStringFormatting/Sources/PresenceStrings.swift b/submodules/TelegramStringFormatting/Sources/PresenceStrings.swift
 index 9dffeb1f8..3aa30d190 100644
 --- a/submodules/TelegramStringFormatting/Sources/PresenceStrings.swift
