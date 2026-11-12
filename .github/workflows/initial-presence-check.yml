@@ -23,3 +23,4 @@ jobs:
           git -C source apply ../ayu-personal.patch
       - name: Exercise initial offline and transitions
         run: python3 host-tests/test_initial_presence.py
+# Retry check after prolonged GitHub queue.
