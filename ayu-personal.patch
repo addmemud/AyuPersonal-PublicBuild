@@ -1255,7 +1255,7 @@ index bdc2ef909..c282a5975 100644
          return .single(.dataPart(resourceOffset: 0, data: Data(), range: 0 ..< 0, complete: false))
          |> then(fetchSecretFileResource(
 diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
-index 7256668bf..f88a0fe0b 100644
+index 7256668bf..68c0c7871 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
 +++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
 @@ -16,7 +16,9 @@ private final class AccountPresenceManagerImpl {
@@ -1269,6 +1269,21 @@ index 7256668bf..f88a0fe0b 100644
      
      init(queue: Queue, shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
          self.queue = queue
+@@ -60,10 +62,10 @@ private final class AccountPresenceManagerImpl {
+             request = self.network.request(Api.functions.account.updateStatus(offline: .boolTrue))
+         }
+         self.isPerformingUpdate.set(true)
+-        self.currentRequestDisposable.set((request
+-        |> `catch` { _ -> Signal<Api.Bool, NoError> in
+-            return .single(.boolFalse)
+-        }
++        // An offline update can fail while the app is reconnecting. Keep the
++        // request alive until it succeeds or a newer presence value replaces it.
++        // The shared retry policy stops if the account is frozen.
++        self.currentRequestDisposable.set((retryRequestIfNotFrozen(signal: request)
+         |> deliverOn(self.queue)).start(completed: { [weak self] in
+             guard let strongSelf = self else {
+                 return
 diff --git a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift b/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
 index 713bf6f41..d75921856 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
@@ -8978,7 +8993,7 @@ diff --git a/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swif
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swift
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,83 @@
 +import Foundation
 +import Display
 +import SwiftSignalKit
@@ -8989,8 +9004,16 @@ new file mode 100644
 +
 +private final class DeletedJournalArguments {
 +    let open: (EngineMessage.Id) -> Void
++    let context: AccountContext
++    let presentationData: PresentationData
++    let messages: [EngineMessage.Id: EngineMessage]
 +
-+    init(open: @escaping (EngineMessage.Id) -> Void) {
++    init(context: AccountContext, presentationData: PresentationData, messages: [EngineMessage], open: @escaping (EngineMessage.Id) -> Void) {
++        self.context = context
++        self.presentationData = presentationData
++        self.messages = messages.reduce(into: [:]) { result, message in
++            result[message.id] = message
++        }
 +        self.open = open
 +    }
 +}
@@ -9017,15 +9040,23 @@ new file mode 100644
 +        case let .empty(text):
 +            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
 +        case let .message(_, id, title):
-+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: "", sectionId: self.section, style: .blocks, action: {
-+                arguments.open(id)
-+            })
++            guard let message = arguments.messages[id] else {
++                return ItemListTextItem(presentationData: presentationData, text: .plain(title), sectionId: self.section)
++            }
++            let data = arguments.presentationData
++            return arguments.context.sharedContext.makeChatMessagePreviewItem(
++                context: arguments.context, messages: [message], theme: data.theme, strings: data.strings,
++                wallpaper: data.chatWallpaper, fontSize: data.chatFontSize, chatBubbleCorners: data.chatBubbleCorners,
++                dateTimeFormat: data.dateTimeFormat, nameOrder: data.nameDisplayOrder, forcedResourceStatus: nil,
++                tapMessage: { _ in arguments.open(id) }, clickThroughMessage: nil, backgroundNode: nil,
++                availableReactions: nil, accountPeer: nil, isCentered: false, isPreview: false, isStandalone: true,
++                rank: nil, rankRole: nil, isGiftMessageComposerPreview: false, activateGiftMessageInput: nil
++            )
 +        }
 +    }
 +}
 +
 +func deletedMessagesJournalController(context: AccountContext, peerId: EnginePeer.Id, open: @escaping (EngineMessage.Id) -> Void) -> ViewController {
-+    let arguments = DeletedJournalArguments(open: open)
 +    let state = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, context.engine.messages.deletedMessagesForPeer(peerId: peerId))
 +    |> deliverOnMainQueue
 +    |> map { presentationData, messages -> (ItemListControllerState, (ItemListNodeState, Any)) in
@@ -9034,13 +9065,14 @@ new file mode 100644
 +        if messages.isEmpty {
 +            entries = [.empty(isRussian ? "Нет сохранённых удалённых сообщений" : "No saved deleted messages")]
 +        } else {
-+            entries = messages.enumerated().map { index, message in
++            entries = messages.reversed().enumerated().map { index, message in
 +                let title = message.text.isEmpty ? (isRussian ? "Медиа" : "Media") : message.text
 +                return .message(Int32(index), message.id, title)
 +            }
 +        }
 +        let presentation = ItemListPresentationData(presentationData)
 +        let state = ItemListControllerState(presentationData: presentation, title: .text(isRussian ? "Удалённые сообщения" : "Deleted Messages"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        let arguments = DeletedJournalArguments(context: context, presentationData: presentationData, messages: messages, open: open)
 +        return (state, (ItemListNodeState(presentationData: presentation, entries: entries, style: .blocks, animateChanges: false), arguments))
 +    }
 +    return ItemListController(context: context, state: state)
