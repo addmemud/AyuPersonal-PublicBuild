@@ -270,7 +270,7 @@ index 5998c8611..0834970a3 100644
                          performAction: performAction,
                          openActionOptions: openActionOptions,
 diff --git a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
-index a1f9746c9..c3eb6e6ef 100644
+index a1f9746c9..c85e749ef 100644
 --- a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 +++ b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 @@ -130,13 +130,14 @@ class ChatImageGalleryItem: GalleryItem {
@@ -315,7 +315,15 @@ index a1f9746c9..c3eb6e6ef 100644
          }
      }
      
-@@ -457,14 +459,17 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+@@ -225,6 +227,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+     private var translateToLanguage: String?
+     private var peerIsCopyProtected: Bool = false
+     private var isSecret: Bool = false
++    private var allowCaptureOfViewOnceMedia: Bool = false
+     private let presentationData: PresentationData
+     
+     private var sendSticker: ((FileMediaReference) -> Void)?
+@@ -457,14 +460,18 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
          }))
      }
      
@@ -328,6 +336,7 @@ index a1f9746c9..c3eb6e6ef 100644
          self.peerIsCopyProtected = peerIsCopyProtected
          self.isSecret = isSecret
 -        self.imageNode.captureProtected = message.id.peerId.namespace == Namespaces.Peer.SecretChat || message.isCopyProtected() || peerIsCopyProtected || isSecret || message.paidContent != nil
++        self.allowCaptureOfViewOnceMedia = allowCaptureOfViewOnceMedia
 +        self.imageNode.captureProtected = message.isCopyProtected()
 +            || peerIsCopyProtected
 +            || message.paidContent != nil
@@ -335,7 +344,7 @@ index a1f9746c9..c3eb6e6ef 100644
          self.updateFooter(animated: false)
          
          var title: String?
-@@ -489,7 +494,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+@@ -489,7 +496,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
          guard let message = self.message else {
              return
          }
@@ -4317,12 +4326,14 @@ new file mode 100644
 +    case option(Int32, AyuActivityPrivacySettings.Option, String, Bool)
 +    case viewOnceHeader(String)
 +    case viewOnce(Bool)
++    case utilityHeader(String)
 +    case footer(String)
 +
 +    var section: ItemListSectionId {
 +        switch self {
 +        case .viewOnceHeader, .viewOnce: return 1
-+        case .footer: return 2
++        case .utilityHeader, .option: return 2
++        case .footer: return 3
 +        default: return 0
 +        }
 +    }
@@ -4332,8 +4343,9 @@ new file mode 100644
 +        case .header: return 0
 +        case let .screen(id, _, _): return id
 +        case let .option(id, _, _, _): return id
-+        case .viewOnceHeader: return 12
-+        case .viewOnce: return 13
++        case .viewOnceHeader: return 3
++        case .viewOnce: return 4
++        case .utilityHeader: return 5
 +        case .footer: return 100
 +        }
 +    }
@@ -4356,6 +4368,8 @@ new file mode 100644
 +                arguments.update(option, value)
 +            })
 +        case let .viewOnceHeader(text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
++        case let .utilityHeader(text):
 +            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
 +        case let .viewOnce(value):
 +            let strings = presentationData.strings.localFeatures.ghostMode
@@ -4389,20 +4403,15 @@ new file mode 100644
 +    |> map { presentationData, settings, ghostSettings -> (ItemListControllerState, (ItemListNodeState, Any)) in
 +        let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
 +        let entries: [AyuSettingsEntry] = [
-+            .header(isRussian ? "ИНДИКАТОРЫ ДЕЙСТВИЙ" : "ACTIVITY INDICATORS"),
++            .header(isRussian ? "НАСТРОЙКИ" : "SETTINGS"),
 +            .screen(1, isRussian ? "Режим призрака" : "Ghost Mode", true),
 +            .screen(2, isRussian ? "Сохранение сообщений" : "Saved messages", false),
-+            .option(3, .typing, isRussian ? "Скрывать набор текста" : "Hide typing", settings.hideTyping),
-+            .option(4, .recording, isRussian ? "Скрывать запись голосовых и кружков" : "Hide voice and video recording", settings.hideRecording),
-+            .option(5, .uploads, isRussian ? "Скрывать индикаторы загрузки" : "Hide upload indicators", settings.hideUploads),
-+            .option(6, .interactions, isRussian ? "Скрывать действия со стикерами, эмодзи и играми" : "Hide sticker, emoji and game activity", settings.hideInteractions),
-+            .option(7, .sponsoredMessages, isRussian ? "Скрывать рекламные сообщения в чатах" : "Hide sponsored messages in chats", settings.hideSponsoredMessages),
-+            .option(8, .readDate, isRussian ? "Сохранять примерную дату прочтения" : "Save approximate read date", settings.saveReadDate),
-+            .option(9, .lastActivity, isRussian ? "Показывать примерную активность" : "Show approximate activity", settings.showLastActivityEstimate),
-+            .option(10, .silentByDefault, isRussian ? "Отправлять без звука по умолчанию" : "Send without sound by default", settings.silentByDefault),
-+            .option(11, .scheduleByDefault, isRussian ? "Отправлять с задержкой (12–30 сек.)" : "Delay outgoing messages (12–30 sec.)", settings.scheduleByDefault),
 +            .viewOnceHeader(isRussian ? "ОДНОРАЗОВЫЕ МЕДИА" : "VIEW-ONCE MEDIA"),
 +            .viewOnce(ghostSettings.keepViewOnceMedia),
++            .utilityHeader(isRussian ? "ДОПОЛНИТЕЛЬНО" : "OTHER"),
++            .option(6, .readDate, isRussian ? "Сохранять примерную дату прочтения" : "Save approximate read date", settings.saveReadDate),
++            .option(7, .lastActivity, isRussian ? "Показывать примерную активность" : "Show approximate activity", settings.showLastActivityEstimate),
++            .option(8, .sponsoredMessages, isRussian ? "Скрывать рекламные сообщения в чатах" : "Hide sponsored messages in chats", settings.hideSponsoredMessages),
 +            .footer(isRussian
 +                ? "Настройки действуют только для этого аккаунта в этом приложении. Скрытие индикаторов не отключает отправку файлов и сообщений. Режим призрака настраивается отдельно; активность с других устройств может быть видна."
 +                : "These settings apply only to this account in this app. Hiding indicators does not stop messages or files from sending. Ghost Mode is configured separately; activity from other devices may remain visible.")
@@ -4842,7 +4851,7 @@ diff --git a/submodules/SettingsUI/Sources/GhostModeSettingsController.swift b/s
 new file mode 100644
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/GhostModeSettingsController.swift
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,221 @@
 +import AccountContext
 +import ComponentFlow
 +import Display
@@ -4855,11 +4864,14 @@ new file mode 100644
 +
 +private final class GhostModeControllerArguments {
 +    let update: (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void
++    let updateActivity: (AyuActivityPrivacySettings.Option, Bool) -> Void
 +
 +    init(
-+        update: @escaping (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void
++        update: @escaping (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void,
++        updateActivity: @escaping (AyuActivityPrivacySettings.Option, Bool) -> Void
 +    ) {
 +        self.update = update
++        self.updateActivity = updateActivity
 +    }
 +}
 +
@@ -4867,6 +4879,8 @@ new file mode 100644
 +    case master
 +    case privacy
 +    case behavior
++    case activity
++    case sending
 +}
 +
 +private enum GhostModeEntry: ItemListNodeEntry {
@@ -4877,6 +4891,8 @@ new file mode 100644
 +    case suppressTyping(Bool, Bool)
 +    case revealOnInteractions(Bool, Bool)
 +    case autoOffline(Bool, Bool)
++    case sectionHeader(Int32, String)
++    case activity(Int32, AyuActivityPrivacySettings.Option, String, Bool)
 +
 +    var section: ItemListSectionId {
 +        switch self {
@@ -4886,6 +4902,8 @@ new file mode 100644
 +            return GhostModeSection.privacy.rawValue
 +        case .revealOnInteractions, .autoOffline:
 +            return GhostModeSection.behavior.rawValue
++        case let .activity(id, _, _, _), let .sectionHeader(id, _):
++            return id < 19 ? GhostModeSection.activity.rawValue : GhostModeSection.sending.rawValue
 +        }
 +    }
 +
@@ -4898,6 +4916,8 @@ new file mode 100644
 +        case .suppressTyping: return 4
 +        case .revealOnInteractions: return 6
 +        case .autoOffline: return 7
++        case let .sectionHeader(id, _): return id
++        case let .activity(id, _, _, _): return id
 +        }
 +    }
 +
@@ -4905,6 +4925,10 @@ new file mode 100644
 +        switch (lhs, rhs) {
 +        case let (.enabled(lhs), .enabled(rhs)):
 +            return lhs == rhs
++        case let (.sectionHeader(li, lt), .sectionHeader(ri, rt)):
++            return li == ri && lt == rt
++        case let (.activity(li, lo, lt, lv), .activity(ri, ro, rt, rv)):
++            return li == ri && lo == ro && lt == rt && lv == rv
 +        case let (.suppressRead(lhsValue, lhsEnabled), .suppressRead(rhsValue, rhsEnabled)),
 +             let (.suppressStories(lhsValue, lhsEnabled), .suppressStories(rhsValue, rhsEnabled)),
 +             let (.suppressOnline(lhsValue, lhsEnabled), .suppressOnline(rhsValue, rhsEnabled)),
@@ -4942,6 +4966,12 @@ new file mode 100644
 +            )
 +        }
 +        switch self {
++        case let .sectionHeader(_, text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
++        case let .activity(_, option, title, value):
++            return ItemListSwitchItem(presentationData: presentationData, title: title, value: value, maximumNumberOfLines: 0, sectionId: self.section, style: .blocks, updated: { value in
++                arguments.updateActivity(option, value)
++            })
 +        case let .enabled(value):
 +            return switchItem(strings.title, strings.masterInfo, value, true, { current, value in
 +                var current = current
@@ -4994,13 +5024,16 @@ new file mode 100644
 +    let arguments = GhostModeControllerArguments(
 +        update: { f in
 +            let _ = context.engine.messages.updateGhostModeSettings(f).start()
++        }, updateActivity: { option, value in
++            let _ = context.engine.accountData.updateAyuActivityPrivacy(option: option, value: value).startStandalone()
 +        }
 +    )
 +
-+    let signal = combineLatest(context.sharedContext.presentationData, settings)
-+    |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
++    let signal = combineLatest(context.sharedContext.presentationData, settings, context.engine.accountData.ayuActivityPrivacySettings())
++    |> map { presentationData, settings, activity -> (ItemListControllerState, (ItemListNodeState, Any)) in
 +        let enabled = settings.isEnabled
 +        let strings = presentationData.strings.localFeatures.ghostMode
++        let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
 +        let entries: [GhostModeEntry] = [
 +            .enabled(settings.isEnabled),
 +            .suppressRead(settings.suppressMessageReadReceipts, enabled),
@@ -5008,7 +5041,15 @@ new file mode 100644
 +            .suppressOnline(settings.suppressOnlineStatus, enabled),
 +            .suppressTyping(settings.suppressTypingStatus, enabled),
 +            .revealOnInteractions(settings.revealOnInteractions, enabled),
-+            .autoOffline(settings.goOfflineAutomatically, enabled)
++            .autoOffline(settings.goOfflineAutomatically, enabled),
++            .sectionHeader(9, isRussian ? "СКРЫТИЕ ДЕЙСТВИЙ — ВСЕГДА" : "ALWAYS HIDE ACTIVITY"),
++            .activity(10, .typing, isRussian ? "Скрывать набор текста всегда" : "Always hide typing", activity.hideTyping),
++            .activity(11, .recording, isRussian ? "Скрывать запись голосовых и кружков" : "Hide voice and video recording", activity.hideRecording),
++            .activity(12, .uploads, isRussian ? "Скрывать индикаторы загрузки" : "Hide upload indicators", activity.hideUploads),
++            .activity(13, .interactions, isRussian ? "Скрывать действия со стикерами, эмодзи и играми" : "Hide sticker, emoji and game activity", activity.hideInteractions),
++            .sectionHeader(19, isRussian ? "ОТПРАВКА СООБЩЕНИЙ" : "SENDING MESSAGES"),
++            .activity(20, .silentByDefault, isRussian ? "Отправлять без звука по умолчанию" : "Send without sound by default", activity.silentByDefault),
++            .activity(21, .scheduleByDefault, isRussian ? "Отправлять с задержкой (12–30 сек.)" : "Delay outgoing messages (12–30 sec.)", activity.scheduleByDefault)
 +        ]
 +        return (
 +            ItemListControllerState(
@@ -5882,7 +5923,7 @@ diff --git a/submodules/TelegramCore/Sources/AyuPrivacy/AyuArchiveSnapshotPrepar
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuPrivacy/AyuArchiveSnapshotPreparation.swift
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,273 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
@@ -6098,6 +6139,7 @@ new file mode 100644
 +    }
 +    |> deliverOn(Queue.concurrentDefaultQueue())
 +    |> mapToSignal { result -> Signal<AyuBurnSnapshotReference?, NoError> in
++        NSLog("AyuBurn: source lookup=%@", result.1.map { _ in "ready" } ?? "missing")
 +        guard let media = result.1 else { return .single(nil) }
 +        if let existing = result.0 {
 +            guard ayuViewOnceSourceResourceId(media)?.stringRepresentation == existing.sourceResourceId,
@@ -6116,6 +6158,7 @@ new file mode 100644
 +              let attributes = try? FileManager.default.attributesOfItem(atPath: path),
 +              attributes[.type] as? FileAttributeType == .typeRegular,
 +              let bytes = (attributes[.size] as? NSNumber)?.int64Value, bytes > 0 else { return .single(nil) }
++        NSLog("AyuBurn: source file ready")
 +        let fileId = Int64.random(in: Int64.min ... Int64.max)
 +        let token = UUID()
 +        let createdAt = Int64(Date().timeIntervalSince1970)
@@ -6126,6 +6169,7 @@ new file mode 100644
 +        }
 +        |> deliverOn(Queue.concurrentDefaultQueue())
 +        |> mapToSignal { reserved -> Signal<AyuBurnSnapshotReference?, NoError> in
++            NSLog("AyuBurn: reservation=%@", reserved ? "ready" : "denied")
 +            guard reserved else { return .single(nil) }
 +            guard let candidate = try? ayuPrepareArchiveSnapshot(media: media, mediaBox: mediaBox, archiveFileId: fileId,
 +                                                                  reservationToken: token, maximumBytes: bytes),
@@ -6135,6 +6179,7 @@ new file mode 100644
 +                |> map { _ -> AyuBurnSnapshotReference? in return nil }
 +            }
 +            return postbox.transaction { transaction -> AyuBurnSnapshotReference? in
++                NSLog("AyuBurn: committing local copy")
 +                guard let archivedId = ayuCommitPreparedViewOnceCopy(transaction: transaction, mediaBox: mediaBox,
 +                                                                      messageId: messageId, token: token, verified: verified),
 +                      let reference = ayuPendingBurnReference(transaction: transaction, originalId: messageId, state: .committed),
@@ -6254,7 +6299,7 @@ diff --git a/submodules/TelegramCore/Sources/AyuPrivacy/AyuViewOnceBurnRequest.s
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuPrivacy/AyuViewOnceBurnRequest.swift
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,71 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
@@ -6278,6 +6323,7 @@ new file mode 100644
 +        return ayuBeginPreparedViewOnceBurn(transaction: transaction, verified: verified)
 +    }
 +    |> mapToSignal { started -> Signal<AyuBurnAttemptResult, NoError> in
++        NSLog("AyuBurn: request stage, started=%@", started ? "yes" : "no")
 +        guard started else { return .single(.notStarted) }
 +        return account.network.request(Api.functions.messages.readMessageContents(id: [reference.originalId.id]), automaticFloodWait: false)
 +        |> map(Optional.init)
@@ -6288,6 +6334,7 @@ new file mode 100644
 +        // Keep the in-flight journal entry and local copy for reconciliation.
 +        |> timeout(20.0, queue: Queue.concurrentDefaultQueue(), alternate: .single(nil))
 +        |> mapToSignal { result -> Signal<AyuBurnAttemptResult, NoError> in
++            NSLog("AyuBurn: network response=%@", result.map { _ in "received" } ?? "missing")
 +            guard let result else { return .single(.uncertain) }
 +            switch result {
 +            case let .affectedMessages(data):
@@ -6312,9 +6359,11 @@ new file mode 100644
 +// The second verification happens off the Postbox queue immediately before
 +// revalidating the source and persisting the in-flight request.
 +func ayuAttemptViewOnceBurn(account: Account, messageId: MessageId) -> Signal<AyuBurnAttemptResult, NoError> {
++    NSLog("AyuBurn: preparing local copy")
 +    return ayuPrepareViewOnceSnapshot(account: account, messageId: messageId)
 +    |> deliverOn(Queue.concurrentDefaultQueue())
 +    |> mapToSignal { reference -> Signal<AyuBurnAttemptResult, NoError> in
++        NSLog("AyuBurn: local copy reference=%@", reference == nil ? "missing" : "ready")
 +        guard let reference,
 +              let verified = AyuVerifiedBurnSnapshot.verify(reference, mediaBoxBasePath: account.postbox.mediaBox.basePath) else {
 +            return .single(.notStarted)
@@ -6552,7 +6601,7 @@ new file mode 100644
 +        suppressTypingStatus: true,
 +        revealOnInteractions: false,
 +        goOfflineAutomatically: true,
-+        keepViewOnceMedia: false
++        keepViewOnceMedia: true
 +    )
 +
 +    public var isEnabled: Bool
