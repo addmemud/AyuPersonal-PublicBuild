@@ -54,6 +54,7 @@ jobs:
         run: |
           python3 tools/check_settings_api.py source
           python3 host-tests/test_policies.py
+          python3 host-tests/test_initial_presence.py
           python3 host-tests/test_archive_storage.py
       - name: Generate pinned FlatBuffers models
         run: |
