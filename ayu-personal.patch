@@ -170,6 +170,19 @@ index 5bdff8a69..b7e115357 100644
              let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
              sourceController.presentInGlobalOverlay(contextController)
          })
+diff --git a/submodules/GalleryData/Sources/GalleryData.swift b/submodules/GalleryData/Sources/GalleryData.swift
+index b9274cc23..23191e3dc 100644
+--- a/submodules/GalleryData/Sources/GalleryData.swift
++++ b/submodules/GalleryData/Sources/GalleryData.swift
+@@ -321,7 +321,7 @@ public func chatMessageGalleryControllerData(
+                 gallery.temporaryDoNotWaitForReady = autoplayingVideo
+                 return .gallery(.single(gallery))
+             } else if message.containsSecretMedia {
+-                let gallery = SecretMediaPreviewController(context: context, messageId: message.id)
++                let gallery = SecretMediaPreviewController(context: context, messageId: message.id, baseNavigationController: navigationController)
+                 return .secretGallery(gallery)
+             } else {
+                 let startState: Signal<(timecode: Double?, rate: Double), NoError>
 diff --git a/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift b/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
 index 7d422d4e9..0c6b649d6 100644
 --- a/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
@@ -270,7 +283,7 @@ index 5998c8611..0834970a3 100644
                          performAction: performAction,
                          openActionOptions: openActionOptions,
 diff --git a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
-index a1f9746c9..c3eb6e6ef 100644
+index a1f9746c9..c85e749ef 100644
 --- a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 +++ b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 @@ -130,13 +130,14 @@ class ChatImageGalleryItem: GalleryItem {
@@ -315,7 +328,15 @@ index a1f9746c9..c3eb6e6ef 100644
          }
      }
      
-@@ -457,14 +459,17 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+@@ -225,6 +227,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+     private var translateToLanguage: String?
+     private var peerIsCopyProtected: Bool = false
+     private var isSecret: Bool = false
++    private var allowCaptureOfViewOnceMedia: Bool = false
+     private let presentationData: PresentationData
+     
+     private var sendSticker: ((FileMediaReference) -> Void)?
+@@ -457,14 +460,18 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
          }))
      }
      
@@ -328,6 +349,7 @@ index a1f9746c9..c3eb6e6ef 100644
          self.peerIsCopyProtected = peerIsCopyProtected
          self.isSecret = isSecret
 -        self.imageNode.captureProtected = message.id.peerId.namespace == Namespaces.Peer.SecretChat || message.isCopyProtected() || peerIsCopyProtected || isSecret || message.paidContent != nil
++        self.allowCaptureOfViewOnceMedia = allowCaptureOfViewOnceMedia
 +        self.imageNode.captureProtected = message.isCopyProtected()
 +            || peerIsCopyProtected
 +            || message.paidContent != nil
@@ -335,7 +357,7 @@ index a1f9746c9..c3eb6e6ef 100644
          self.updateFooter(animated: false)
          
          var title: String?
-@@ -489,7 +494,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+@@ -489,7 +496,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
          guard let message = self.message else {
              return
          }
@@ -401,7 +423,7 @@ index 7636bd184..6ef082905 100644
                  self.footerContentNode.setWebPage(webPage, media: media)
              }
 diff --git a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
-index 3596b9d8f..8b7da4c41 100644
+index 3596b9d8f..f1c8530fb 100644
 --- a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 +++ b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 @@ -6,6 +6,7 @@ import Postbox
@@ -412,7 +434,15 @@ index 3596b9d8f..8b7da4c41 100644
  import AccountContext
  import RadialStatusNode
  import ScreenCaptureDetection
-@@ -157,6 +158,11 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -148,6 +149,7 @@ private final class SecretMediaPreviewControllerNode: GalleryControllerNode {
+ public final class SecretMediaPreviewController: ViewController {
+     private let context: AccountContext
+     private let messageId: MessageId
++    private weak var ayuBaseNavigationController: NavigationController?
+     
+     private let _ready = Promise<Bool>()
+     override public var ready: Promise<Bool> {
+@@ -157,6 +159,11 @@ public final class SecretMediaPreviewController: ViewController {
      
      private let disposable = MetaDisposable()
      private let markMessageAsConsumedDisposable = MetaDisposable()
@@ -424,18 +454,23 @@ index 3596b9d8f..8b7da4c41 100644
      
      private var controllerNode: SecretMediaPreviewControllerNode {
          return self.displayNode as! SecretMediaPreviewControllerNode
-@@ -180,7 +186,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -180,10 +187,13 @@ public final class SecretMediaPreviewController: ViewController {
      private var screenCaptureEventsDisposable: Disposable?
      
      private weak var tooltipController: TooltipScreen?
 -    
+-    public init(context: AccountContext, messageId: MessageId) {
 +
 +    private var ghostModeSettings = GhostModeSettings.defaultSettings
 +
-     public init(context: AccountContext, messageId: MessageId) {
++    public init(context: AccountContext, messageId: MessageId, baseNavigationController: NavigationController? = nil) {
          self.context = context
          self.messageId = messageId
-@@ -193,15 +201,25 @@ public final class SecretMediaPreviewController: ViewController {
++        self.ayuBaseNavigationController = baseNavigationController
+         self.presentationData = context.sharedContext.currentPresentationData.with { $0 }
+         
+         super.init(navigationBarPresentationData: NavigationBarPresentationData(theme: GalleryController.darkNavigationTheme, strings: NavigationBarStrings(presentationStrings: self.presentationData.strings)))
+@@ -193,15 +203,25 @@ public final class SecretMediaPreviewController: ViewController {
          
          self.statusBar.statusBarStyle = .White
          
@@ -468,7 +503,7 @@ index 3596b9d8f..8b7da4c41 100644
          self.hiddenMediaManagerIndex = self.context.sharedContext.mediaManager.galleryHiddenMediaManager.addSource(self._hiddenMedia.get()
          |> map { messageIdAndMedia in
              if let (messageId, media) = messageIdAndMedia {
-@@ -228,6 +246,8 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -228,6 +248,8 @@ public final class SecretMediaPreviewController: ViewController {
      deinit {
          self.disposable.dispose()
          self.markMessageAsConsumedDisposable.dispose()
@@ -477,7 +512,7 @@ index 3596b9d8f..8b7da4c41 100644
          if let hiddenMediaManagerIndex = self.hiddenMediaManagerIndex {
              self.context.sharedContext.mediaManager.galleryHiddenMediaManager.removeSource(hiddenMediaManagerIndex)
          }
-@@ -241,6 +261,67 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -241,6 +263,67 @@ public final class SecretMediaPreviewController: ViewController {
      @objc func donePressed() {
          self.dismiss(forceAway: false)
      }
@@ -545,7 +580,17 @@ index 3596b9d8f..8b7da4c41 100644
      
      public override func loadDisplayNode() {
          let controllerInteraction = GalleryControllerInteraction(presentController: { [weak self] controller, arguments in
-@@ -295,7 +376,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -259,6 +342,9 @@ public final class SecretMediaPreviewController: ViewController {
+         })
+         self.displayNode = SecretMediaPreviewControllerNode(context: self.context, controllerInteraction: controllerInteraction, titleView: nil)
+         self.displayNodeDidLoad()
++        self.controllerNode.baseNavigationController = { [weak self] in
++            return self?.ayuBaseNavigationController
++        }
+         
+         self.controllerNode.statusPressed = { [weak self] _ in
+             if let self {
+@@ -295,7 +381,7 @@ public final class SecretMediaPreviewController: ViewController {
          self.controllerNode.beginCustomDismiss = { [weak self] _ in
              if let strongSelf = self {
                  strongSelf._hiddenMedia.set(.single(nil))
@@ -554,7 +599,7 @@ index 3596b9d8f..8b7da4c41 100644
                  let animatedOutNode = true
                  
                  strongSelf.controllerNode.animateOut(animateContent: animatedOutNode, completion: {
-@@ -376,6 +457,17 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -376,6 +462,17 @@ public final class SecretMediaPreviewController: ViewController {
                          if message.flags.contains(.Incoming) || strongSelf.currentNodeMessageIsVideo {
                              if let node = strongSelf.controllerNode.pager.centralItemNode() {
                                  strongSelf.footerContentNode.set(node.footerContent())
@@ -572,7 +617,7 @@ index 3596b9d8f..8b7da4c41 100644
                              }
                          } else {
                              if timerStarted {
-@@ -425,7 +517,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -425,7 +522,9 @@ public final class SecretMediaPreviewController: ViewController {
                      if strongSelf.messageId.peerId.namespace == Namespaces.Peer.CloudUser {
                          let _ = enqueueMessages(account: strongSelf.context.account, peerId: strongSelf.messageId.peerId, messages: [.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaAction(action: TelegramMediaActionType.historyScreenshot)), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
                      } else if strongSelf.messageId.peerId.namespace == Namespaces.Peer.SecretChat {
@@ -583,7 +628,7 @@ index 3596b9d8f..8b7da4c41 100644
                      }
                  }
              })
-@@ -513,6 +607,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -513,6 +612,9 @@ public final class SecretMediaPreviewController: ViewController {
          if let message = message {
              if self.currentNodeMessageId != message.id {
                  self.currentNodeMessageId = message.id
@@ -593,7 +638,7 @@ index 3596b9d8f..8b7da4c41 100644
                  var tempFilePath: String?
                  var duration: Double = 0.0
                  for media in message.media {
-@@ -527,9 +624,10 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -527,9 +629,10 @@ public final class SecretMediaPreviewController: ViewController {
                          break
                      }
                  }
@@ -606,7 +651,7 @@ index 3596b9d8f..8b7da4c41 100644
                      if let self {
                          if self.currentNodeMessageIsViewOnce || (duration < 30.0 && !self.currentMessageIsDismissed) {
                              if let node = self.controllerNode.pager.centralItemNode() as? UniversalVideoGalleryItemNode {
-@@ -539,7 +637,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -539,7 +642,9 @@ public final class SecretMediaPreviewController: ViewController {
                              self.dismiss(forceAway: false)
                          }
                      }
@@ -617,7 +662,7 @@ index 3596b9d8f..8b7da4c41 100644
                      self._ready.set(.single(true))
                      return
                  }
-@@ -597,6 +697,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -597,6 +702,7 @@ public final class SecretMediaPreviewController: ViewController {
              }
              self.currentMessageIsDismissed = true
          }
@@ -1210,7 +1255,7 @@ index bdc2ef909..c282a5975 100644
          return .single(.dataPart(resourceOffset: 0, data: Data(), range: 0 ..< 0, complete: false))
          |> then(fetchSecretFileResource(
 diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
-index 7256668bf..f88a0fe0b 100644
+index 7256668bf..68c0c7871 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
 +++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
 @@ -16,7 +16,9 @@ private final class AccountPresenceManagerImpl {
@@ -1224,6 +1269,21 @@ index 7256668bf..f88a0fe0b 100644
      
      init(queue: Queue, shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
          self.queue = queue
+@@ -60,10 +62,10 @@ private final class AccountPresenceManagerImpl {
+             request = self.network.request(Api.functions.account.updateStatus(offline: .boolTrue))
+         }
+         self.isPerformingUpdate.set(true)
+-        self.currentRequestDisposable.set((request
+-        |> `catch` { _ -> Signal<Api.Bool, NoError> in
+-            return .single(.boolFalse)
+-        }
++        // An offline update can fail while the app is reconnecting. Keep the
++        // request alive until it succeeds or a newer presence value replaces it.
++        // The shared retry policy stops if the account is frozen.
++        self.currentRequestDisposable.set((retryRequestIfNotFrozen(signal: request)
+         |> deliverOn(self.queue)).start(completed: { [weak self] in
+             guard let strongSelf = self else {
+                 return
 diff --git a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift b/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
 index 713bf6f41..d75921856 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
@@ -2624,6 +2684,62 @@ index 627ad4dbc..850da07cd 100644
              }
          }
      }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+index 56ba2739a..b7a8f2e8a 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@ -353,7 +353,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+                 }
+                 
+                 var rawText: String
+-                let attributedText: NSAttributedString
++                var attributedText: NSAttributedString
+                 var messageEntities: [MessageTextEntity]?
+                 
+                 var mediaDuration: Double? = nil
+@@ -604,6 +604,25 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+                 } else {
+                     attributedText = NSAttributedString(string: " ", font: textFont, textColor: messageTheme.primaryTextColor)
+                 }
++
++                // Previous revisions are locally associated messages, never text
++                // sent to the server. Append plain text after rendering the live
++                // message so its entity offsets and links remain unchanged.
++                if let history = item.message.archivedMessageAttribute, !history.versionIds.isEmpty {
++                    let previousTexts = history.versionIds.compactMap { id -> String? in
++                        guard let version = item.message.associatedMessages[id], !version.text.isEmpty else { return nil }
++                        return version.text
++                    }
++                    if !previousTexts.isEmpty {
++                        let isRussian = item.presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
++                        let label = isRussian ? "Ранее" : "Previously"
++                        let result = NSMutableAttributedString(attributedString: attributedText)
++                        for previousText in previousTexts {
++                            result.append(NSAttributedString(string: "\n\n\(label): \(previousText)", font: textFont, textColor: messageTheme.primaryTextColor.withAlphaComponent(0.65)))
++                        }
++                        attributedText = result
++                    }
++                }
+                 
+                 // The custom-emoji attribute is not re-applied here: `stringWithAppliedEntities`
+                 // already attached it, using ranges adjusted for the substitutions it performs
+@@ -1798,7 +1817,15 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+             return NSRange(location: location, length: upperBound - location)
+         }
+         
+-        let range = normalizedSelectionRange(rawRange, length: string.length)
++        // Archived revisions shown below the live text are not part of the
++        // server message and must never become a reply quote at a fake offset.
++        let selectionLength: Int
++        if item.message.archivedMessageAttribute?.versionIds.isEmpty == false {
++            selectionLength = min(string.length, (item.message.text as NSString).length)
++        } else {
++            selectionLength = string.length
++        }
++        let range = normalizedSelectionRange(rawRange, length: selectionLength)
+         guard range.length > 0 else {
+             return nil
+         }
 diff --git a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift b/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
 index eadd3a184..f48002d73 100644
 --- a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
@@ -4317,12 +4433,14 @@ new file mode 100644
 +    case option(Int32, AyuActivityPrivacySettings.Option, String, Bool)
 +    case viewOnceHeader(String)
 +    case viewOnce(Bool)
++    case utilityHeader(String)
 +    case footer(String)
 +
 +    var section: ItemListSectionId {
 +        switch self {
 +        case .viewOnceHeader, .viewOnce: return 1
-+        case .footer: return 2
++        case .utilityHeader, .option: return 2
++        case .footer: return 3
 +        default: return 0
 +        }
 +    }
@@ -4332,8 +4450,9 @@ new file mode 100644
 +        case .header: return 0
 +        case let .screen(id, _, _): return id
 +        case let .option(id, _, _, _): return id
-+        case .viewOnceHeader: return 12
-+        case .viewOnce: return 13
++        case .viewOnceHeader: return 3
++        case .viewOnce: return 4
++        case .utilityHeader: return 5
 +        case .footer: return 100
 +        }
 +    }
@@ -4356,6 +4475,8 @@ new file mode 100644
 +                arguments.update(option, value)
 +            })
 +        case let .viewOnceHeader(text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
++        case let .utilityHeader(text):
 +            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
 +        case let .viewOnce(value):
 +            let strings = presentationData.strings.localFeatures.ghostMode
@@ -4389,20 +4510,15 @@ new file mode 100644
 +    |> map { presentationData, settings, ghostSettings -> (ItemListControllerState, (ItemListNodeState, Any)) in
 +        let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
 +        let entries: [AyuSettingsEntry] = [
-+            .header(isRussian ? "ИНДИКАТОРЫ ДЕЙСТВИЙ" : "ACTIVITY INDICATORS"),
++            .header(isRussian ? "НАСТРОЙКИ" : "SETTINGS"),
 +            .screen(1, isRussian ? "Режим призрака" : "Ghost Mode", true),
 +            .screen(2, isRussian ? "Сохранение сообщений" : "Saved messages", false),
-+            .option(3, .typing, isRussian ? "Скрывать набор текста" : "Hide typing", settings.hideTyping),
-+            .option(4, .recording, isRussian ? "Скрывать запись голосовых и кружков" : "Hide voice and video recording", settings.hideRecording),
-+            .option(5, .uploads, isRussian ? "Скрывать индикаторы загрузки" : "Hide upload indicators", settings.hideUploads),
-+            .option(6, .interactions, isRussian ? "Скрывать действия со стикерами, эмодзи и играми" : "Hide sticker, emoji and game activity", settings.hideInteractions),
-+            .option(7, .sponsoredMessages, isRussian ? "Скрывать рекламные сообщения в чатах" : "Hide sponsored messages in chats", settings.hideSponsoredMessages),
-+            .option(8, .readDate, isRussian ? "Сохранять примерную дату прочтения" : "Save approximate read date", settings.saveReadDate),
-+            .option(9, .lastActivity, isRussian ? "Показывать примерную активность" : "Show approximate activity", settings.showLastActivityEstimate),
-+            .option(10, .silentByDefault, isRussian ? "Отправлять без звука по умолчанию" : "Send without sound by default", settings.silentByDefault),
-+            .option(11, .scheduleByDefault, isRussian ? "Отправлять с задержкой (12–30 сек.)" : "Delay outgoing messages (12–30 sec.)", settings.scheduleByDefault),
 +            .viewOnceHeader(isRussian ? "ОДНОРАЗОВЫЕ МЕДИА" : "VIEW-ONCE MEDIA"),
 +            .viewOnce(ghostSettings.keepViewOnceMedia),
++            .utilityHeader(isRussian ? "ДОПОЛНИТЕЛЬНО" : "OTHER"),
++            .option(6, .readDate, isRussian ? "Сохранять примерную дату прочтения" : "Save approximate read date", settings.saveReadDate),
++            .option(7, .lastActivity, isRussian ? "Показывать примерную активность" : "Show approximate activity", settings.showLastActivityEstimate),
++            .option(8, .sponsoredMessages, isRussian ? "Скрывать рекламные сообщения в чатах" : "Hide sponsored messages in chats", settings.hideSponsoredMessages),
 +            .footer(isRussian
 +                ? "Настройки действуют только для этого аккаунта в этом приложении. Скрытие индикаторов не отключает отправку файлов и сообщений. Режим призрака настраивается отдельно; активность с других устройств может быть видна."
 +                : "These settings apply only to this account in this app. Hiding indicators does not stop messages or files from sending. Ghost Mode is configured separately; activity from other devices may remain visible.")
@@ -4842,7 +4958,7 @@ diff --git a/submodules/SettingsUI/Sources/GhostModeSettingsController.swift b/s
 new file mode 100644
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/GhostModeSettingsController.swift
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,221 @@
 +import AccountContext
 +import ComponentFlow
 +import Display
@@ -4855,11 +4971,14 @@ new file mode 100644
 +
 +private final class GhostModeControllerArguments {
 +    let update: (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void
++    let updateActivity: (AyuActivityPrivacySettings.Option, Bool) -> Void
 +
 +    init(
-+        update: @escaping (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void
++        update: @escaping (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void,
++        updateActivity: @escaping (AyuActivityPrivacySettings.Option, Bool) -> Void
 +    ) {
 +        self.update = update
++        self.updateActivity = updateActivity
 +    }
 +}
 +
@@ -4867,6 +4986,8 @@ new file mode 100644
 +    case master
 +    case privacy
 +    case behavior
++    case activity
++    case sending
 +}
 +
 +private enum GhostModeEntry: ItemListNodeEntry {
@@ -4877,6 +4998,8 @@ new file mode 100644
 +    case suppressTyping(Bool, Bool)
 +    case revealOnInteractions(Bool, Bool)
 +    case autoOffline(Bool, Bool)
++    case sectionHeader(Int32, String)
++    case activity(Int32, AyuActivityPrivacySettings.Option, String, Bool)
 +
 +    var section: ItemListSectionId {
 +        switch self {
@@ -4886,6 +5009,8 @@ new file mode 100644
 +            return GhostModeSection.privacy.rawValue
 +        case .revealOnInteractions, .autoOffline:
 +            return GhostModeSection.behavior.rawValue
++        case let .activity(id, _, _, _), let .sectionHeader(id, _):
++            return id < 19 ? GhostModeSection.activity.rawValue : GhostModeSection.sending.rawValue
 +        }
 +    }
 +
@@ -4898,6 +5023,8 @@ new file mode 100644
 +        case .suppressTyping: return 4
 +        case .revealOnInteractions: return 6
 +        case .autoOffline: return 7
++        case let .sectionHeader(id, _): return id
++        case let .activity(id, _, _, _): return id
 +        }
 +    }
 +
@@ -4905,6 +5032,10 @@ new file mode 100644
 +        switch (lhs, rhs) {
 +        case let (.enabled(lhs), .enabled(rhs)):
 +            return lhs == rhs
++        case let (.sectionHeader(li, lt), .sectionHeader(ri, rt)):
++            return li == ri && lt == rt
++        case let (.activity(li, lo, lt, lv), .activity(ri, ro, rt, rv)):
++            return li == ri && lo == ro && lt == rt && lv == rv
 +        case let (.suppressRead(lhsValue, lhsEnabled), .suppressRead(rhsValue, rhsEnabled)),
 +             let (.suppressStories(lhsValue, lhsEnabled), .suppressStories(rhsValue, rhsEnabled)),
 +             let (.suppressOnline(lhsValue, lhsEnabled), .suppressOnline(rhsValue, rhsEnabled)),
@@ -4942,6 +5073,12 @@ new file mode 100644
 +            )
 +        }
 +        switch self {
++        case let .sectionHeader(_, text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
++        case let .activity(_, option, title, value):
++            return ItemListSwitchItem(presentationData: presentationData, title: title, value: value, maximumNumberOfLines: 0, sectionId: self.section, style: .blocks, updated: { value in
++                arguments.updateActivity(option, value)
++            })
 +        case let .enabled(value):
 +            return switchItem(strings.title, strings.masterInfo, value, true, { current, value in
 +                var current = current
@@ -4994,13 +5131,16 @@ new file mode 100644
 +    let arguments = GhostModeControllerArguments(
 +        update: { f in
 +            let _ = context.engine.messages.updateGhostModeSettings(f).start()
++        }, updateActivity: { option, value in
++            let _ = context.engine.accountData.updateAyuActivityPrivacy(option: option, value: value).startStandalone()
 +        }
 +    )
 +
-+    let signal = combineLatest(context.sharedContext.presentationData, settings)
-+    |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
++    let signal = combineLatest(context.sharedContext.presentationData, settings, context.engine.accountData.ayuActivityPrivacySettings())
++    |> map { presentationData, settings, activity -> (ItemListControllerState, (ItemListNodeState, Any)) in
 +        let enabled = settings.isEnabled
 +        let strings = presentationData.strings.localFeatures.ghostMode
++        let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
 +        let entries: [GhostModeEntry] = [
 +            .enabled(settings.isEnabled),
 +            .suppressRead(settings.suppressMessageReadReceipts, enabled),
@@ -5008,7 +5148,15 @@ new file mode 100644
 +            .suppressOnline(settings.suppressOnlineStatus, enabled),
 +            .suppressTyping(settings.suppressTypingStatus, enabled),
 +            .revealOnInteractions(settings.revealOnInteractions, enabled),
-+            .autoOffline(settings.goOfflineAutomatically, enabled)
++            .autoOffline(settings.goOfflineAutomatically, enabled),
++            .sectionHeader(9, isRussian ? "СКРЫТИЕ ДЕЙСТВИЙ — ВСЕГДА" : "ALWAYS HIDE ACTIVITY"),
++            .activity(10, .typing, isRussian ? "Скрывать набор текста всегда" : "Always hide typing", activity.hideTyping),
++            .activity(11, .recording, isRussian ? "Скрывать запись голосовых и кружков" : "Hide voice and video recording", activity.hideRecording),
++            .activity(12, .uploads, isRussian ? "Скрывать индикаторы загрузки" : "Hide upload indicators", activity.hideUploads),
++            .activity(13, .interactions, isRussian ? "Скрывать действия со стикерами, эмодзи и играми" : "Hide sticker, emoji and game activity", activity.hideInteractions),
++            .sectionHeader(19, isRussian ? "ОТПРАВКА СООБЩЕНИЙ" : "SENDING MESSAGES"),
++            .activity(20, .silentByDefault, isRussian ? "Отправлять без звука по умолчанию" : "Send without sound by default", activity.silentByDefault),
++            .activity(21, .scheduleByDefault, isRussian ? "Отправлять с задержкой (12–30 сек.)" : "Delay outgoing messages (12–30 sec.)", activity.scheduleByDefault)
 +        ]
 +        return (
 +            ItemListControllerState(
@@ -6560,7 +6708,7 @@ new file mode 100644
 +        suppressTypingStatus: true,
 +        revealOnInteractions: false,
 +        goOfflineAutomatically: true,
-+        keepViewOnceMedia: false
++        keepViewOnceMedia: true
 +    )
 +
 +    public var isEnabled: Bool

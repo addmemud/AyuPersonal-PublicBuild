@@ -48,6 +48,9 @@ func deliverOn<T,E: Error>(_ queue: Queue) -> (Signal<T,E>) -> Signal<T,E> { { $
 func `catch`<T,E: Error>(_ f: @escaping (E) -> Signal<T,NoError>) -> (Signal<T,E>) -> Signal<T,NoError> {
     { signal in Signal<T,NoError> { next, done in signal.subscribe(next,done) } }
 }
+func retryRequestIfNotFrozen<T>(signal: Signal<T,MTRpcError>) -> Signal<T?,NoError> {
+    Signal<T?,NoError> { next, done in signal.subscribe({ value in next(value) }, done) }
+}
 enum Api {
     enum Bool { case boolTrue, boolFalse }
     enum functions { enum account { static func updateStatus(offline: Api.Bool) -> Api.Bool { offline } } }
