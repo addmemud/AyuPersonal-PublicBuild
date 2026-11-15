@@ -2633,6 +2633,45 @@ index 627ad4dbc..850da07cd 100644
              }
          }
      }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+index 56ba2739a..31bdc6082 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@ -353,7 +353,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+                 }
+                 
+                 var rawText: String
+-                let attributedText: NSAttributedString
++                var attributedText: NSAttributedString
+                 var messageEntities: [MessageTextEntity]?
+                 
+                 var mediaDuration: Double? = nil
+@@ -604,6 +604,25 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+                 } else {
+                     attributedText = NSAttributedString(string: " ", font: textFont, textColor: messageTheme.primaryTextColor)
+                 }
++
++                // Previous revisions are locally associated messages, never text
++                // sent to the server. Append plain text after rendering the live
++                // message so its entity offsets and links remain unchanged.
++                if let history = item.message.archivedMessageAttribute, !history.versionIds.isEmpty {
++                    let previousTexts = history.versionIds.compactMap { id -> String? in
++                        guard let version = item.message.associatedMessages[id], !version.text.isEmpty else { return nil }
++                        return version.text
++                    }
++                    if !previousTexts.isEmpty {
++                        let isRussian = item.presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
++                        let label = isRussian ? "Ранее" : "Previously"
++                        let result = NSMutableAttributedString(attributedString: attributedText)
++                        for previousText in previousTexts {
++                            result.append(NSAttributedString(string: "\n\n\(label): \(previousText)", font: textFont, textColor: messageTheme.primaryTextColor.withAlphaComponent(0.65)))
++                        }
++                        attributedText = result
++                    }
++                }
+                 
+                 // The custom-emoji attribute is not re-applied here: `stringWithAppliedEntities`
+                 // already attached it, using ranges adjusted for the substitutions it performs
 diff --git a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift b/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
 index eadd3a184..f48002d73 100644
 --- a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift

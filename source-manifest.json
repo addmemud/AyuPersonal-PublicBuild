@@ -2,7 +2,7 @@
   "name": "Ayu Personal",
   "upstream_url": "https://github.com/TelegramMessenger/Telegram-iOS.git",
   "upstream_commit": "fb0e62ba8a147f0821da6aa63c09da7d79a10111",
-  "patch_sha256": "65bc21592a49400115d5f1f23948cce5f36168725771e59ff1f065c3d23bbe44",
+  "patch_sha256": "c4eaf9f8ba910cdc88bd4eec7ddcca11858c309bc973dce9b275883d234edafd",
   "bundle_id": "org.ayupersonal.addmemud",
   "ios_build_verified": false,
   "changed_files": [
@@ -86,6 +86,7 @@
     "submodules/TelegramUI/Components/Chat/ChatMessageInstantVideoItemNode/Sources/ChatMessageInstantVideoItemNode.swift",
     "submodules/TelegramUI/Components/Chat/ChatMessageInteractiveFileNode/Sources/ChatMessageInteractiveFileNode.swift",
     "submodules/TelegramUI/Components/Chat/ChatMessageInteractiveInstantVideoNode/Sources/ChatMessageInteractiveInstantVideoNode.swift",
+    "submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift",
     "submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift",
     "submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleView.swift",
     "submodules/TelegramUI/Components/MediaManager/PeerMessagesMediaPlaylist/Sources/PeerMessagesMediaPlaylist.swift",
