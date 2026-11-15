@@ -170,8 +170,52 @@ index 5bdff8a69..b7e115357 100644
              let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
              sourceController.presentInGlobalOverlay(contextController)
          })
+diff --git a/submodules/GalleryData/Sources/GalleryData.swift b/submodules/GalleryData/Sources/GalleryData.swift
+index b9274cc23..23191e3dc 100644
+--- a/submodules/GalleryData/Sources/GalleryData.swift
++++ b/submodules/GalleryData/Sources/GalleryData.swift
+@@ -321,7 +321,7 @@ public func chatMessageGalleryControllerData(
+                 gallery.temporaryDoNotWaitForReady = autoplayingVideo
+                 return .gallery(.single(gallery))
+             } else if message.containsSecretMedia {
+-                let gallery = SecretMediaPreviewController(context: context, messageId: message.id)
++                let gallery = SecretMediaPreviewController(context: context, messageId: message.id, baseNavigationController: navigationController)
+                 return .secretGallery(gallery)
+             } else {
+                 let startState: Signal<(timecode: Double?, rate: Double), NoError>
+diff --git a/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift b/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
+index 7d422d4e9..0c6b649d6 100644
+--- a/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
++++ b/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
+@@ -856,7 +856,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
+         }
+     }
+     
+-    func setMessage(_ message: EngineRawMessage, mediaSubject: GalleryMediaSubject? = nil, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
++    func setMessage(_ message: EngineRawMessage, mediaSubject: GalleryMediaSubject? = nil, displayInfo: Bool = true, translateToLanguage: String? = nil, peerIsCopyProtected: Bool = false, allowViewOnceActions: Bool = false, displayPictureInPictureButton: Bool = false, settingsButtonState: SettingsButtonState? = nil, displayTextRecognitionButton: Bool = false, displayStickersButton: Bool = false, animated: Bool = false) {
+         self.currentMessage = message
+         self.mediaSubject = mediaSubject
+         
+@@ -866,7 +866,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
+         }
+         var canFullscreen = false
+         var canDelete: Bool
+-        var canShare = !message.containsSecretMedia && !Namespaces.Message.allNonRegular.contains(message.id.namespace) && message.adAttribute == nil
++        var canShare = (!message.containsSecretMedia || allowViewOnceActions) && !Namespaces.Message.allNonRegular.contains(message.id.namespace) && message.adAttribute == nil
+                 
+         var canEdit = false
+         var isImage = false
+@@ -951,7 +951,7 @@ final class ChatItemGalleryFooterContentNode: GalleryFooterContentNode, ASScroll
+             canEdit = false
+         }
+         
+-        if message.containsSecretMedia {
++        if message.containsSecretMedia && !allowViewOnceActions {
+             canDelete = false
+         }
+         
 diff --git a/submodules/GalleryUI/Sources/GalleryController.swift b/submodules/GalleryUI/Sources/GalleryController.swift
-index 5998c8611..1b48c88e7 100644
+index 5998c8611..0834970a3 100644
 --- a/submodules/GalleryUI/Sources/GalleryController.swift
 +++ b/submodules/GalleryUI/Sources/GalleryController.swift
 @@ -278,6 +278,7 @@ public func galleryItemForEntry(
@@ -194,7 +238,15 @@ index 5998c8611..1b48c88e7 100644
              
              var originData = GalleryItemOriginData(title: message.effectiveAuthor.flatMap(EnginePeer.init)?.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder), timestamp: message.timestamp)
              if Namespaces.Message.allNonRegular.contains(message.id.namespace) {
-@@ -350,6 +354,7 @@ public func galleryItemForEntry(
+@@ -334,6 +338,7 @@ public func galleryItemForEntry(
+                 contentInfo: .message(message, entry.mediaSubject),
+                 caption: caption,
+                 peerIsCopyProtected: peerIsCopyProtected,
++                allowViewOnceActions: allowCaptureOfViewOnceMedia,
+                 playbackRate: playbackRate,
+                 performAction: performAction,
+                 openActionOptions: openActionOptions,
+@@ -350,6 +355,7 @@ public func galleryItemForEntry(
                  translateToLanguage: translateToLanguage,
                  peerIsCopyProtected: peerIsCopyProtected,
                  isSecret: isSecret,
@@ -202,7 +254,7 @@ index 5998c8611..1b48c88e7 100644
                  displayInfoOnTop: displayInfoOnTop,
                  performAction: performAction,
                  openActionOptions: openActionOptions,
-@@ -360,7 +365,10 @@ public func galleryItemForEntry(
+@@ -360,7 +366,10 @@ public func galleryItemForEntry(
      } else if let file = media as? TelegramMediaFile {
          if file.isVideo {
              let content: UniversalVideoContent
@@ -214,7 +266,15 @@ index 5998c8611..1b48c88e7 100644
              if file.isAnimated {
                  content = NativeVideoContent(id: .message(message.stableId, file.fileId), userLocation: .peer(message.id.peerId), fileReference: .message(message: MessageReference(message), media: file), imageReference: mediaImage.flatMap({ ImageMediaReference.message(message: MessageReference(message), media: $0) }), loopVideo: true, enableSound: false, tempFilePath: tempFilePath, captureProtected: captureProtected, storeAfterDownload: generateStoreAfterDownload?(message, file))
              } else {
-@@ -456,6 +464,7 @@ public func galleryItemForEntry(
+@@ -426,6 +435,7 @@ public func galleryItemForEntry(
+                 landscape: landscape,
+                 timecode: timecode,
+                 peerIsCopyProtected: peerIsCopyProtected,
++                allowViewOnceActions: allowCaptureOfViewOnceMedia,
+                 playbackRate: playbackRate,
+                 configuration: configuration,
+                 playbackCompleted: playbackCompleted,
+@@ -456,6 +466,7 @@ public func galleryItemForEntry(
                          translateToLanguage: translateToLanguage,
                          peerIsCopyProtected: peerIsCopyProtected,
                          isSecret: isSecret,
@@ -223,7 +283,7 @@ index 5998c8611..1b48c88e7 100644
                          performAction: performAction,
                          openActionOptions: openActionOptions,
 diff --git a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
-index a1f9746c9..7895f55aa 100644
+index a1f9746c9..c85e749ef 100644
 --- a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 +++ b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 @@ -130,13 +130,14 @@ class ChatImageGalleryItem: GalleryItem {
@@ -268,7 +328,15 @@ index a1f9746c9..7895f55aa 100644
          }
      }
      
-@@ -457,14 +459,17 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+@@ -225,6 +227,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+     private var translateToLanguage: String?
+     private var peerIsCopyProtected: Bool = false
+     private var isSecret: Bool = false
++    private var allowCaptureOfViewOnceMedia: Bool = false
+     private let presentationData: PresentationData
+     
+     private var sendSticker: ((FileMediaReference) -> Void)?
+@@ -457,14 +460,18 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
          }))
      }
      
@@ -281,6 +349,7 @@ index a1f9746c9..7895f55aa 100644
          self.peerIsCopyProtected = peerIsCopyProtected
          self.isSecret = isSecret
 -        self.imageNode.captureProtected = message.id.peerId.namespace == Namespaces.Peer.SecretChat || message.isCopyProtected() || peerIsCopyProtected || isSecret || message.paidContent != nil
++        self.allowCaptureOfViewOnceMedia = allowCaptureOfViewOnceMedia
 +        self.imageNode.captureProtected = message.isCopyProtected()
 +            || peerIsCopyProtected
 +            || message.paidContent != nil
@@ -288,8 +357,73 @@ index a1f9746c9..7895f55aa 100644
          self.updateFooter(animated: false)
          
          var title: String?
+@@ -489,7 +496,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+         guard let message = self.message else {
+             return
+         }
+-        self.footerContentNode.setMessage(message, mediaSubject: self.mediaSubject, displayInfo: self.displayInfo, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, displayTextRecognitionButton: self.displayTextRecognitionButton, displayStickersButton: self.displayStickersButton, animated: animated)
++        self.footerContentNode.setMessage(message, mediaSubject: self.mediaSubject, displayInfo: self.displayInfo, translateToLanguage: self.translateToLanguage, peerIsCopyProtected: self.peerIsCopyProtected, allowViewOnceActions: self.allowCaptureOfViewOnceMedia, displayTextRecognitionButton: self.displayTextRecognitionButton, displayStickersButton: self.displayStickersButton, animated: animated)
+     }
+     
+     fileprivate func setImage(userLocation: MediaResourceUserLocation, imageReference: ImageMediaReference) {
+diff --git a/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift b/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
+index 7636bd184..6ef082905 100644
+--- a/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
++++ b/submodules/GalleryUI/Sources/Items/UniversalVideoGalleryItem.swift
+@@ -66,6 +66,7 @@ public class UniversalVideoGalleryItem: GalleryItem {
+     let landscape: Bool
+     let timecode: Double?
+     let peerIsCopyProtected: Bool
++    let allowViewOnceActions: Bool
+     let playbackRate: () -> Double?
+     let configuration: GalleryConfiguration?
+     let playbackCompleted: () -> Void
+@@ -74,7 +75,7 @@ public class UniversalVideoGalleryItem: GalleryItem {
+     let storeMediaPlaybackState: (MessageId, Double?, Double) -> Void
+     let present: (ViewController, Any?) -> Void
+ 
+-    public init(context: AccountContext, presentationData: PresentationData, content: UniversalVideoContent, originData: GalleryItemOriginData?, indexData: GalleryItemIndexData?, contentInfo: UniversalVideoGalleryItemContentInfo?, caption: NSAttributedString, description: NSAttributedString? = nil, credit: NSAttributedString? = nil, displayInfoOnTop: Bool = false, hideControls: Bool = false, fromPlayingVideo: Bool = false, isSecret: Bool = false, landscape: Bool = false, timecode: Double? = nil, peerIsCopyProtected: Bool = false, playbackRate: @escaping () -> Double?, configuration: GalleryConfiguration? = nil, playbackCompleted: @escaping () -> Void = {}, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction, Message) -> Void, storeMediaPlaybackState: @escaping (MessageId, Double?, Double) -> Void, present: @escaping (ViewController, Any?) -> Void) {
++    public init(context: AccountContext, presentationData: PresentationData, content: UniversalVideoContent, originData: GalleryItemOriginData?, indexData: GalleryItemIndexData?, contentInfo: UniversalVideoGalleryItemContentInfo?, caption: NSAttributedString, description: NSAttributedString? = nil, credit: NSAttributedString? = nil, displayInfoOnTop: Bool = false, hideControls: Bool = false, fromPlayingVideo: Bool = false, isSecret: Bool = false, landscape: Bool = false, timecode: Double? = nil, peerIsCopyProtected: Bool = false, allowViewOnceActions: Bool = false, playbackRate: @escaping () -> Double?, configuration: GalleryConfiguration? = nil, playbackCompleted: @escaping () -> Void = {}, performAction: @escaping (GalleryControllerInteractionTapAction) -> Void, openActionOptions: @escaping (GalleryControllerInteractionTapAction, Message) -> Void, storeMediaPlaybackState: @escaping (MessageId, Double?, Double) -> Void, present: @escaping (ViewController, Any?) -> Void) {
+         self.context = context
+         self.presentationData = presentationData
+         self.content = content
+@@ -91,6 +92,7 @@ public class UniversalVideoGalleryItem: GalleryItem {
+         self.landscape = landscape
+         self.timecode = timecode
+         self.peerIsCopyProtected = peerIsCopyProtected
++        self.allowViewOnceActions = allowViewOnceActions
+         self.playbackRate = playbackRate
+         self.configuration = configuration
+         self.playbackCompleted = playbackCompleted
+@@ -1716,7 +1718,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
+                             if let contentInfo = item.contentInfo {
+                                 switch contentInfo {
+                                     case let .message(message, mediaSubject):
+-                                    self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton, animated: true)
++                                    self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, allowViewOnceActions: item.allowViewOnceActions, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton, animated: true)
+                                     case let .webPage(webPage, media, _):
+                                         self.footerContentNode.setWebPage(webPage, media: media)
+                                 }
+@@ -2056,7 +2058,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
+             switch contentInfo {
+                 case let .message(message, mediaSubject):
+                     isAd = message.adAttribute != nil
+-                    self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton)
++                    self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, allowViewOnceActions: item.allowViewOnceActions, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton)
+                 case let .webPage(webPage, media, _):
+                     self.footerContentNode.setWebPage(webPage, media: media)
+             }
+@@ -3118,7 +3120,7 @@ final class UniversalVideoGalleryItemNode: ZoomableContentGalleryItemNode {
+             switch contentInfo {
+             case let .message(message, mediaSubject):
+                 isAd = message.adAttribute != nil
+-                self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton)
++                self.footerContentNode.setMessage(message, mediaSubject: mediaSubject, displayInfo: !item.displayInfoOnTop, peerIsCopyProtected: item.peerIsCopyProtected, allowViewOnceActions: item.allowViewOnceActions, displayPictureInPictureButton: self.hasPictureInPicture, settingsButtonState: self.settingsButtonState, displayStickersButton: self.displayStickersButton)
+             case let .webPage(webPage, media, _):
+                 self.footerContentNode.setWebPage(webPage, media: media)
+             }
 diff --git a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
-index 3596b9d8f..a8289f663 100644
+index 3596b9d8f..f1c8530fb 100644
 --- a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 +++ b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 @@ -6,6 +6,7 @@ import Postbox
@@ -300,27 +434,43 @@ index 3596b9d8f..a8289f663 100644
  import AccountContext
  import RadialStatusNode
  import ScreenCaptureDetection
-@@ -157,6 +158,8 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -148,6 +149,7 @@ private final class SecretMediaPreviewControllerNode: GalleryControllerNode {
+ public final class SecretMediaPreviewController: ViewController {
+     private let context: AccountContext
+     private let messageId: MessageId
++    private weak var ayuBaseNavigationController: NavigationController?
+     
+     private let _ready = Promise<Bool>()
+     override public var ready: Promise<Bool> {
+@@ -157,6 +159,11 @@ public final class SecretMediaPreviewController: ViewController {
      
      private let disposable = MetaDisposable()
      private let markMessageAsConsumedDisposable = MetaDisposable()
 +    private let burnDisposable = MetaDisposable()
++    private let itemBarButtonsDisposable = MetaDisposable()
++    private var itemBarButtons: [UIBarButtonItem] = []
++    private var burnButton: UIBarButtonItem?
 +    private var isBurnInProgress = false
      
      private var controllerNode: SecretMediaPreviewControllerNode {
          return self.displayNode as! SecretMediaPreviewControllerNode
-@@ -180,7 +183,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -180,10 +187,13 @@ public final class SecretMediaPreviewController: ViewController {
      private var screenCaptureEventsDisposable: Disposable?
      
      private weak var tooltipController: TooltipScreen?
 -    
+-    public init(context: AccountContext, messageId: MessageId) {
 +
 +    private var ghostModeSettings = GhostModeSettings.defaultSettings
 +
-     public init(context: AccountContext, messageId: MessageId) {
++    public init(context: AccountContext, messageId: MessageId, baseNavigationController: NavigationController? = nil) {
          self.context = context
          self.messageId = messageId
-@@ -193,15 +198,25 @@ public final class SecretMediaPreviewController: ViewController {
++        self.ayuBaseNavigationController = baseNavigationController
+         self.presentationData = context.sharedContext.currentPresentationData.with { $0 }
+         
+         super.init(navigationBarPresentationData: NavigationBarPresentationData(theme: GalleryController.darkNavigationTheme, strings: NavigationBarStrings(presentationStrings: self.presentationData.strings)))
+@@ -193,15 +203,25 @@ public final class SecretMediaPreviewController: ViewController {
          
          self.statusBar.statusBarStyle = .White
          
@@ -353,7 +503,16 @@ index 3596b9d8f..a8289f663 100644
          self.hiddenMediaManagerIndex = self.context.sharedContext.mediaManager.galleryHiddenMediaManager.addSource(self._hiddenMedia.get()
          |> map { messageIdAndMedia in
              if let (messageId, media) = messageIdAndMedia {
-@@ -241,6 +256,65 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -228,6 +248,8 @@ public final class SecretMediaPreviewController: ViewController {
+     deinit {
+         self.disposable.dispose()
+         self.markMessageAsConsumedDisposable.dispose()
++        self.burnDisposable.dispose()
++        self.itemBarButtonsDisposable.dispose()
+         if let hiddenMediaManagerIndex = self.hiddenMediaManagerIndex {
+             self.context.sharedContext.mediaManager.galleryHiddenMediaManager.removeSource(hiddenMediaManagerIndex)
+         }
+@@ -241,6 +263,67 @@ public final class SecretMediaPreviewController: ViewController {
      @objc func donePressed() {
          self.dismiss(forceAway: false)
      }
@@ -364,12 +523,14 @@ index 3596b9d8f..a8289f663 100644
 +            shouldDisplay = !message.attributes.contains(where: { ($0 as? ConsumableContentMessageAttribute)?.consumed == true })
 +        }
 +        if shouldDisplay {
-+            if self.navigationItem.rightBarButtonItem == nil {
-+                self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.localFeatures.ghostMode.burnViewOnceMedia, style: .plain, target: self, action: #selector(self.burnPressed))
++            if self.burnButton == nil {
++                self.burnButton = UIBarButtonItem(title: self.presentationData.strings.localFeatures.ghostMode.burnViewOnceMedia, style: .plain, target: self, action: #selector(self.burnPressed))
 +            }
-+            self.navigationItem.rightBarButtonItem?.isEnabled = !self.isBurnInProgress
++            self.burnButton?.isEnabled = !self.isBurnInProgress
++            self.navigationItem.rightBarButtonItems = (self.burnButton.map { [$0] } ?? []) + self.itemBarButtons
 +        } else {
-+            self.navigationItem.rightBarButtonItem = nil
++            self.burnButton = nil
++            self.navigationItem.rightBarButtonItems = nil
 +        }
 +    }
 +
@@ -419,7 +580,17 @@ index 3596b9d8f..a8289f663 100644
      
      public override func loadDisplayNode() {
          let controllerInteraction = GalleryControllerInteraction(presentController: { [weak self] controller, arguments in
-@@ -295,7 +369,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -259,6 +342,9 @@ public final class SecretMediaPreviewController: ViewController {
+         })
+         self.displayNode = SecretMediaPreviewControllerNode(context: self.context, controllerInteraction: controllerInteraction, titleView: nil)
+         self.displayNodeDidLoad()
++        self.controllerNode.baseNavigationController = { [weak self] in
++            return self?.ayuBaseNavigationController
++        }
+         
+         self.controllerNode.statusPressed = { [weak self] _ in
+             if let self {
+@@ -295,7 +381,7 @@ public final class SecretMediaPreviewController: ViewController {
          self.controllerNode.beginCustomDismiss = { [weak self] _ in
              if let strongSelf = self {
                  strongSelf._hiddenMedia.set(.single(nil))
@@ -428,7 +599,25 @@ index 3596b9d8f..a8289f663 100644
                  let animatedOutNode = true
                  
                  strongSelf.controllerNode.animateOut(animateContent: animatedOutNode, completion: {
-@@ -425,7 +499,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -376,6 +462,17 @@ public final class SecretMediaPreviewController: ViewController {
+                         if message.flags.contains(.Incoming) || strongSelf.currentNodeMessageIsVideo {
+                             if let node = strongSelf.controllerNode.pager.centralItemNode() {
+                                 strongSelf.footerContentNode.set(node.footerContent())
++                                if strongSelf.allowsCaptureOfViewOnceMedia(message) {
++                                    strongSelf.itemBarButtonsDisposable.set((combineLatest(node.rightBarButtonItem(), node.rightBarButtonItems())
++                                    |> deliverOnMainQueue).start(next: { [weak self] item, items in
++                                        guard let self else { return }
++                                        self.itemBarButtons = item.map { [$0] } ?? items ?? []
++                                        self.updateBurnButton()
++                                    }))
++                                } else {
++                                    strongSelf.itemBarButtonsDisposable.set(nil)
++                                    strongSelf.itemBarButtons = []
++                                }
+                             }
+                         } else {
+                             if timerStarted {
+@@ -425,7 +522,9 @@ public final class SecretMediaPreviewController: ViewController {
                      if strongSelf.messageId.peerId.namespace == Namespaces.Peer.CloudUser {
                          let _ = enqueueMessages(account: strongSelf.context.account, peerId: strongSelf.messageId.peerId, messages: [.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaAction(action: TelegramMediaActionType.historyScreenshot)), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
                      } else if strongSelf.messageId.peerId.namespace == Namespaces.Peer.SecretChat {
@@ -439,7 +628,7 @@ index 3596b9d8f..a8289f663 100644
                      }
                  }
              })
-@@ -513,6 +589,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -513,6 +612,9 @@ public final class SecretMediaPreviewController: ViewController {
          if let message = message {
              if self.currentNodeMessageId != message.id {
                  self.currentNodeMessageId = message.id
@@ -449,7 +638,7 @@ index 3596b9d8f..a8289f663 100644
                  var tempFilePath: String?
                  var duration: Double = 0.0
                  for media in message.media {
-@@ -527,9 +606,10 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -527,9 +629,10 @@ public final class SecretMediaPreviewController: ViewController {
                          break
                      }
                  }
@@ -458,11 +647,11 @@ index 3596b9d8f..a8289f663 100644
                  let entry = GalleryEntry(entry: MessageHistoryEntry(message: message, isRead: false, location: nil, monthLocation: nil, attributes: MutableMessageHistoryEntryAttributes(authorIsContact: false)))
 -                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: true, isSecret: true, playbackRate: { nil }, peerIsCopyProtected: true, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
 +                let allowCaptureOfViewOnceMedia = self.allowsCaptureOfViewOnceMedia(message)
-+                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: !allowCaptureOfViewOnceMedia, isSecret: true, allowCaptureOfViewOnceMedia: allowCaptureOfViewOnceMedia, playbackRate: { nil }, peerIsCopyProtected: !allowCaptureOfViewOnceMedia, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
++                guard let item = galleryItemForEntry(context: self.context, presentationData: self.presentationData, entry: entry, streamVideos: false, hideControls: !allowCaptureOfViewOnceMedia, isSecret: !allowCaptureOfViewOnceMedia, allowCaptureOfViewOnceMedia: allowCaptureOfViewOnceMedia, playbackRate: { nil }, peerIsCopyProtected: !allowCaptureOfViewOnceMedia, tempFilePath: tempFilePath, playbackCompleted: { [weak self] in
                      if let self {
                          if self.currentNodeMessageIsViewOnce || (duration < 30.0 && !self.currentMessageIsDismissed) {
                              if let node = self.controllerNode.pager.centralItemNode() as? UniversalVideoGalleryItemNode {
-@@ -539,7 +619,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -539,7 +642,9 @@ public final class SecretMediaPreviewController: ViewController {
                              self.dismiss(forceAway: false)
                          }
                      }
@@ -473,7 +662,7 @@ index 3596b9d8f..a8289f663 100644
                      self._ready.set(.single(true))
                      return
                  }
-@@ -597,6 +679,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -597,6 +702,7 @@ public final class SecretMediaPreviewController: ViewController {
              }
              self.currentMessageIsDismissed = true
          }
@@ -1066,7 +1255,7 @@ index bdc2ef909..c282a5975 100644
          return .single(.dataPart(resourceOffset: 0, data: Data(), range: 0 ..< 0, complete: false))
          |> then(fetchSecretFileResource(
 diff --git a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
-index 7256668bf..f88a0fe0b 100644
+index 7256668bf..68c0c7871 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
 +++ b/submodules/TelegramCore/Sources/State/ManagedAccountPresence.swift
 @@ -16,7 +16,9 @@ private final class AccountPresenceManagerImpl {
@@ -1080,6 +1269,21 @@ index 7256668bf..f88a0fe0b 100644
      
      init(queue: Queue, shouldKeepOnlinePresence: Signal<Bool, NoError>, network: Network) {
          self.queue = queue
+@@ -60,10 +62,10 @@ private final class AccountPresenceManagerImpl {
+             request = self.network.request(Api.functions.account.updateStatus(offline: .boolTrue))
+         }
+         self.isPerformingUpdate.set(true)
+-        self.currentRequestDisposable.set((request
+-        |> `catch` { _ -> Signal<Api.Bool, NoError> in
+-            return .single(.boolFalse)
+-        }
++        // An offline update can fail while the app is reconnecting. Keep the
++        // request alive until it succeeds or a newer presence value replaces it.
++        // The shared retry policy stops if the account is frozen.
++        self.currentRequestDisposable.set((retryRequestIfNotFrozen(signal: request)
+         |> deliverOn(self.queue)).start(completed: { [weak self] in
+             guard let strongSelf = self else {
+                 return
 diff --git a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift b/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
 index 713bf6f41..d75921856 100644
 --- a/submodules/TelegramCore/Sources/State/ManagedAutoremoveMessageOperations.swift
@@ -1294,6 +1498,35 @@ index ba2fc52d7..793207d8b 100644
                      }
                  }
              }
+diff --git a/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift b/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift
+index 7c4556016..664dbedb6 100644
+--- a/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift
++++ b/submodules/TelegramCore/Sources/State/ServerMessageMerge.swift
+@@ -1,6 +1,15 @@
+ import Foundation
+ import Postbox
+ 
++// Server refreshes omit local history; prefer any history created for this edit.
++func ayuPreservingArchiveHistory(previous: [MessageAttribute], incoming: [MessageAttribute]) -> [MessageAttribute] {
++    var result = incoming
++    if !result.contains(where: { $0 is ArchivedMessageAttribute }), let history = previous.first(where: { $0 is ArchivedMessageAttribute }) {
++        result.append(history)
++    }
++    return result
++}
++
+ /// The server's copy of a message the account already stores, keeping what the server's copy does not carry:
+ /// the outgoing live-location tag, the stored Incoming flag, a translation while the text and entities are
+ /// unchanged, a resolved fact check over a pending one with the same hash, and unlocked paid media.
+@@ -9,7 +18,7 @@ import Postbox
+ func mergedServerMessageUpdate(previous previousMessage: Message, updated message: StoreMessage) -> StoreMessage {
+     var updatedFlags = message.flags
+     var updatedLocalTags = message.localTags
+-    var updatedAttributes = message.attributes
++    var updatedAttributes = ayuPreservingArchiveHistory(previous: previousMessage.attributes, incoming: message.attributes)
+     if previousMessage.localTags.contains(.OutgoingLiveLocation) {
+         updatedLocalTags.insert(.OutgoingLiveLocation)
+     }
 diff --git a/submodules/TelegramCore/Sources/SyncCore/SyncCore_CloudFileMediaResource.swift b/submodules/TelegramCore/Sources/SyncCore/SyncCore_CloudFileMediaResource.swift
 index 417ba5d21..93b010cc2 100644
 --- a/submodules/TelegramCore/Sources/SyncCore/SyncCore_CloudFileMediaResource.swift
@@ -2184,6 +2417,38 @@ index fe15eed4b..099c6fc45 100644
              let _ = updateMessageReactionsInteractively(
                  account: self.account,
                  messageIds: ids,
+diff --git a/submodules/TelegramCore/Tests/ServerMessageMergeTests.swift b/submodules/TelegramCore/Tests/ServerMessageMergeTests.swift
+index d9cc47c89..d0b6e4673 100644
+--- a/submodules/TelegramCore/Tests/ServerMessageMergeTests.swift
++++ b/submodules/TelegramCore/Tests/ServerMessageMergeTests.swift
+@@ -31,6 +31,27 @@ final class ServerMessageMergeTests: XCTestCase {
+         XCTAssertFalse(merged.attributes.contains(where: { $0 is TranslationMessageAttribute }))
+     }
+ 
++    func testLocalEditHistorySurvivesServerRefresh() {
++        let version = MessageId(peerId: self.channel, namespace: Namespaces.Message.ArchivedVersion, id: 11)
++        let history = ArchivedMessageAttribute(originalMessageId: self.messageId, versionIds: [version], deletedAt: nil, sessionId: 1)
++        let merged = mergedServerMessageUpdate(previous: self.stored(text: "Before", attributes: [history], media: []), updated: self.fromServer(text: "After", media: []))
++        let saved = merged.attributes.compactMap { $0 as? ArchivedMessageAttribute }
++        XCTAssertEqual(saved.count, 1)
++        XCTAssertEqual(saved.first?.versionIds, [version])
++    }
++
++    func testNewEditHistoryReplacesPreviousHistory() {
++        let older = MessageId(peerId: self.channel, namespace: Namespaces.Message.ArchivedVersion, id: 11)
++        let newer = MessageId(peerId: self.channel, namespace: Namespaces.Message.ArchivedVersion, id: 12)
++        let previous = ArchivedMessageAttribute(originalMessageId: self.messageId, versionIds: [older], deletedAt: nil, sessionId: 1)
++        let current = ArchivedMessageAttribute(originalMessageId: self.messageId, versionIds: [older, newer], deletedAt: nil, sessionId: 1)
++        let updated = self.fromServer(text: "After", media: []).withUpdatedAttributes([current])
++        let merged = mergedServerMessageUpdate(previous: self.stored(text: "Before", attributes: [previous], media: []), updated: updated)
++        let saved = merged.attributes.compactMap { $0 as? ArchivedMessageAttribute }
++        XCTAssertEqual(saved.count, 1)
++        XCTAssertEqual(saved.first?.versionIds, [older, newer])
++    }
++
+     // A purchased paid post must not fall back to its locked preview.
+     func testUnlockedPaidMediaSurvives() {
+         let image = TelegramMediaImage(imageId: MediaId(namespace: Namespaces.Media.CloudImage, id: 1), representations: [], immediateThumbnailData: nil, reference: nil, partialReference: nil, flags: [])
 diff --git a/submodules/TelegramStringFormatting/Sources/PresenceStrings.swift b/submodules/TelegramStringFormatting/Sources/PresenceStrings.swift
 index 9dffeb1f8..3aa30d190 100644
 --- a/submodules/TelegramStringFormatting/Sources/PresenceStrings.swift
@@ -2419,6 +2684,62 @@ index 627ad4dbc..850da07cd 100644
              }
          }
      }
+diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+index 56ba2739a..b7a8f2e8a 100644
+--- a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
++++ b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
+@@ -353,7 +353,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+                 }
+                 
+                 var rawText: String
+-                let attributedText: NSAttributedString
++                var attributedText: NSAttributedString
+                 var messageEntities: [MessageTextEntity]?
+                 
+                 var mediaDuration: Double? = nil
+@@ -604,6 +604,25 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+                 } else {
+                     attributedText = NSAttributedString(string: " ", font: textFont, textColor: messageTheme.primaryTextColor)
+                 }
++
++                // Previous revisions are locally associated messages, never text
++                // sent to the server. Append plain text after rendering the live
++                // message so its entity offsets and links remain unchanged.
++                if let history = item.message.archivedMessageAttribute, !history.versionIds.isEmpty {
++                    let previousTexts = history.versionIds.compactMap { id -> String? in
++                        guard let version = item.message.associatedMessages[id], !version.text.isEmpty else { return nil }
++                        return version.text
++                    }
++                    if !previousTexts.isEmpty {
++                        let isRussian = item.presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
++                        let label = isRussian ? "Ранее" : "Previously"
++                        let result = NSMutableAttributedString(attributedString: attributedText)
++                        for previousText in previousTexts {
++                            result.append(NSAttributedString(string: "\n\n\(label): \(previousText)", font: textFont, textColor: messageTheme.primaryTextColor.withAlphaComponent(0.65)))
++                        }
++                        attributedText = result
++                    }
++                }
+                 
+                 // The custom-emoji attribute is not re-applied here: `stringWithAppliedEntities`
+                 // already attached it, using ranges adjusted for the substitutions it performs
+@@ -1798,7 +1817,15 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+             return NSRange(location: location, length: upperBound - location)
+         }
+         
+-        let range = normalizedSelectionRange(rawRange, length: string.length)
++        // Archived revisions shown below the live text are not part of the
++        // server message and must never become a reply quote at a fake offset.
++        let selectionLength: Int
++        if item.message.archivedMessageAttribute?.versionIds.isEmpty == false {
++            selectionLength = min(string.length, (item.message.text as NSString).length)
++        } else {
++            selectionLength = string.length
++        }
++        let range = normalizedSelectionRange(rawRange, length: selectionLength)
+         guard range.length > 0 else {
+             return nil
+         }
 diff --git a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift b/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
 index eadd3a184..f48002d73 100644
 --- a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
@@ -4112,12 +4433,14 @@ new file mode 100644
 +    case option(Int32, AyuActivityPrivacySettings.Option, String, Bool)
 +    case viewOnceHeader(String)
 +    case viewOnce(Bool)
++    case utilityHeader(String)
 +    case footer(String)
 +
 +    var section: ItemListSectionId {
 +        switch self {
 +        case .viewOnceHeader, .viewOnce: return 1
-+        case .footer: return 2
++        case .utilityHeader, .option: return 2
++        case .footer: return 3
 +        default: return 0
 +        }
 +    }
@@ -4127,8 +4450,9 @@ new file mode 100644
 +        case .header: return 0
 +        case let .screen(id, _, _): return id
 +        case let .option(id, _, _, _): return id
-+        case .viewOnceHeader: return 12
-+        case .viewOnce: return 13
++        case .viewOnceHeader: return 3
++        case .viewOnce: return 4
++        case .utilityHeader: return 5
 +        case .footer: return 100
 +        }
 +    }
@@ -4151,6 +4475,8 @@ new file mode 100644
 +                arguments.update(option, value)
 +            })
 +        case let .viewOnceHeader(text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
++        case let .utilityHeader(text):
 +            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
 +        case let .viewOnce(value):
 +            let strings = presentationData.strings.localFeatures.ghostMode
@@ -4184,20 +4510,15 @@ new file mode 100644
 +    |> map { presentationData, settings, ghostSettings -> (ItemListControllerState, (ItemListNodeState, Any)) in
 +        let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
 +        let entries: [AyuSettingsEntry] = [
-+            .header(isRussian ? "ИНДИКАТОРЫ ДЕЙСТВИЙ" : "ACTIVITY INDICATORS"),
++            .header(isRussian ? "НАСТРОЙКИ" : "SETTINGS"),
 +            .screen(1, isRussian ? "Режим призрака" : "Ghost Mode", true),
 +            .screen(2, isRussian ? "Сохранение сообщений" : "Saved messages", false),
-+            .option(3, .typing, isRussian ? "Скрывать набор текста" : "Hide typing", settings.hideTyping),
-+            .option(4, .recording, isRussian ? "Скрывать запись голосовых и кружков" : "Hide voice and video recording", settings.hideRecording),
-+            .option(5, .uploads, isRussian ? "Скрывать индикаторы загрузки" : "Hide upload indicators", settings.hideUploads),
-+            .option(6, .interactions, isRussian ? "Скрывать действия со стикерами, эмодзи и играми" : "Hide sticker, emoji and game activity", settings.hideInteractions),
-+            .option(7, .sponsoredMessages, isRussian ? "Скрывать рекламные сообщения в чатах" : "Hide sponsored messages in chats", settings.hideSponsoredMessages),
-+            .option(8, .readDate, isRussian ? "Сохранять примерную дату прочтения" : "Save approximate read date", settings.saveReadDate),
-+            .option(9, .lastActivity, isRussian ? "Показывать примерную активность" : "Show approximate activity", settings.showLastActivityEstimate),
-+            .option(10, .silentByDefault, isRussian ? "Отправлять без звука по умолчанию" : "Send without sound by default", settings.silentByDefault),
-+            .option(11, .scheduleByDefault, isRussian ? "Отправлять с задержкой (12–30 сек.)" : "Delay outgoing messages (12–30 sec.)", settings.scheduleByDefault),
 +            .viewOnceHeader(isRussian ? "ОДНОРАЗОВЫЕ МЕДИА" : "VIEW-ONCE MEDIA"),
 +            .viewOnce(ghostSettings.keepViewOnceMedia),
++            .utilityHeader(isRussian ? "ДОПОЛНИТЕЛЬНО" : "OTHER"),
++            .option(6, .readDate, isRussian ? "Сохранять примерную дату прочтения" : "Save approximate read date", settings.saveReadDate),
++            .option(7, .lastActivity, isRussian ? "Показывать примерную активность" : "Show approximate activity", settings.showLastActivityEstimate),
++            .option(8, .sponsoredMessages, isRussian ? "Скрывать рекламные сообщения в чатах" : "Hide sponsored messages in chats", settings.hideSponsoredMessages),
 +            .footer(isRussian
 +                ? "Настройки действуют только для этого аккаунта в этом приложении. Скрытие индикаторов не отключает отправку файлов и сообщений. Режим призрака настраивается отдельно; активность с других устройств может быть видна."
 +                : "These settings apply only to this account in this app. Hiding indicators does not stop messages or files from sending. Ghost Mode is configured separately; activity from other devices may remain visible.")
@@ -4637,7 +4958,7 @@ diff --git a/submodules/SettingsUI/Sources/GhostModeSettingsController.swift b/s
 new file mode 100644
 --- /dev/null
 +++ b/submodules/SettingsUI/Sources/GhostModeSettingsController.swift
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,221 @@
 +import AccountContext
 +import ComponentFlow
 +import Display
@@ -4650,11 +4971,14 @@ new file mode 100644
 +
 +private final class GhostModeControllerArguments {
 +    let update: (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void
++    let updateActivity: (AyuActivityPrivacySettings.Option, Bool) -> Void
 +
 +    init(
-+        update: @escaping (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void
++        update: @escaping (@escaping (GhostModeSettings) -> GhostModeSettings) -> Void,
++        updateActivity: @escaping (AyuActivityPrivacySettings.Option, Bool) -> Void
 +    ) {
 +        self.update = update
++        self.updateActivity = updateActivity
 +    }
 +}
 +
@@ -4662,6 +4986,8 @@ new file mode 100644
 +    case master
 +    case privacy
 +    case behavior
++    case activity
++    case sending
 +}
 +
 +private enum GhostModeEntry: ItemListNodeEntry {
@@ -4672,6 +4998,8 @@ new file mode 100644
 +    case suppressTyping(Bool, Bool)
 +    case revealOnInteractions(Bool, Bool)
 +    case autoOffline(Bool, Bool)
++    case sectionHeader(Int32, String)
++    case activity(Int32, AyuActivityPrivacySettings.Option, String, Bool)
 +
 +    var section: ItemListSectionId {
 +        switch self {
@@ -4681,6 +5009,8 @@ new file mode 100644
 +            return GhostModeSection.privacy.rawValue
 +        case .revealOnInteractions, .autoOffline:
 +            return GhostModeSection.behavior.rawValue
++        case let .activity(id, _, _, _), let .sectionHeader(id, _):
++            return id < 19 ? GhostModeSection.activity.rawValue : GhostModeSection.sending.rawValue
 +        }
 +    }
 +
@@ -4693,6 +5023,8 @@ new file mode 100644
 +        case .suppressTyping: return 4
 +        case .revealOnInteractions: return 6
 +        case .autoOffline: return 7
++        case let .sectionHeader(id, _): return id
++        case let .activity(id, _, _, _): return id
 +        }
 +    }
 +
@@ -4700,6 +5032,10 @@ new file mode 100644
 +        switch (lhs, rhs) {
 +        case let (.enabled(lhs), .enabled(rhs)):
 +            return lhs == rhs
++        case let (.sectionHeader(li, lt), .sectionHeader(ri, rt)):
++            return li == ri && lt == rt
++        case let (.activity(li, lo, lt, lv), .activity(ri, ro, rt, rv)):
++            return li == ri && lo == ro && lt == rt && lv == rv
 +        case let (.suppressRead(lhsValue, lhsEnabled), .suppressRead(rhsValue, rhsEnabled)),
 +             let (.suppressStories(lhsValue, lhsEnabled), .suppressStories(rhsValue, rhsEnabled)),
 +             let (.suppressOnline(lhsValue, lhsEnabled), .suppressOnline(rhsValue, rhsEnabled)),
@@ -4737,6 +5073,12 @@ new file mode 100644
 +            )
 +        }
 +        switch self {
++        case let .sectionHeader(_, text):
++            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
++        case let .activity(_, option, title, value):
++            return ItemListSwitchItem(presentationData: presentationData, title: title, value: value, maximumNumberOfLines: 0, sectionId: self.section, style: .blocks, updated: { value in
++                arguments.updateActivity(option, value)
++            })
 +        case let .enabled(value):
 +            return switchItem(strings.title, strings.masterInfo, value, true, { current, value in
 +                var current = current
@@ -4789,13 +5131,16 @@ new file mode 100644
 +    let arguments = GhostModeControllerArguments(
 +        update: { f in
 +            let _ = context.engine.messages.updateGhostModeSettings(f).start()
++        }, updateActivity: { option, value in
++            let _ = context.engine.accountData.updateAyuActivityPrivacy(option: option, value: value).startStandalone()
 +        }
 +    )
 +
-+    let signal = combineLatest(context.sharedContext.presentationData, settings)
-+    |> map { presentationData, settings -> (ItemListControllerState, (ItemListNodeState, Any)) in
++    let signal = combineLatest(context.sharedContext.presentationData, settings, context.engine.accountData.ayuActivityPrivacySettings())
++    |> map { presentationData, settings, activity -> (ItemListControllerState, (ItemListNodeState, Any)) in
 +        let enabled = settings.isEnabled
 +        let strings = presentationData.strings.localFeatures.ghostMode
++        let isRussian = presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
 +        let entries: [GhostModeEntry] = [
 +            .enabled(settings.isEnabled),
 +            .suppressRead(settings.suppressMessageReadReceipts, enabled),
@@ -4803,7 +5148,15 @@ new file mode 100644
 +            .suppressOnline(settings.suppressOnlineStatus, enabled),
 +            .suppressTyping(settings.suppressTypingStatus, enabled),
 +            .revealOnInteractions(settings.revealOnInteractions, enabled),
-+            .autoOffline(settings.goOfflineAutomatically, enabled)
++            .autoOffline(settings.goOfflineAutomatically, enabled),
++            .sectionHeader(9, isRussian ? "СКРЫТИЕ ДЕЙСТВИЙ — ВСЕГДА" : "ALWAYS HIDE ACTIVITY"),
++            .activity(10, .typing, isRussian ? "Скрывать набор текста всегда" : "Always hide typing", activity.hideTyping),
++            .activity(11, .recording, isRussian ? "Скрывать запись голосовых и кружков" : "Hide voice and video recording", activity.hideRecording),
++            .activity(12, .uploads, isRussian ? "Скрывать индикаторы загрузки" : "Hide upload indicators", activity.hideUploads),
++            .activity(13, .interactions, isRussian ? "Скрывать действия со стикерами, эмодзи и играми" : "Hide sticker, emoji and game activity", activity.hideInteractions),
++            .sectionHeader(19, isRussian ? "ОТПРАВКА СООБЩЕНИЙ" : "SENDING MESSAGES"),
++            .activity(20, .silentByDefault, isRussian ? "Отправлять без звука по умолчанию" : "Send without sound by default", activity.silentByDefault),
++            .activity(21, .scheduleByDefault, isRussian ? "Отправлять с задержкой (12–30 сек.)" : "Delay outgoing messages (12–30 sec.)", activity.scheduleByDefault)
 +        ]
 +        return (
 +            ItemListControllerState(
@@ -5677,7 +6030,7 @@ diff --git a/submodules/TelegramCore/Sources/AyuPrivacy/AyuArchiveSnapshotPrepar
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuPrivacy/AyuArchiveSnapshotPreparation.swift
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,273 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
@@ -5893,6 +6246,7 @@ new file mode 100644
 +    }
 +    |> deliverOn(Queue.concurrentDefaultQueue())
 +    |> mapToSignal { result -> Signal<AyuBurnSnapshotReference?, NoError> in
++        NSLog("AyuBurn: source lookup=%@", result.1.map { _ in "ready" } ?? "missing")
 +        guard let media = result.1 else { return .single(nil) }
 +        if let existing = result.0 {
 +            guard ayuViewOnceSourceResourceId(media)?.stringRepresentation == existing.sourceResourceId,
@@ -5911,6 +6265,7 @@ new file mode 100644
 +              let attributes = try? FileManager.default.attributesOfItem(atPath: path),
 +              attributes[.type] as? FileAttributeType == .typeRegular,
 +              let bytes = (attributes[.size] as? NSNumber)?.int64Value, bytes > 0 else { return .single(nil) }
++        NSLog("AyuBurn: source file ready")
 +        let fileId = Int64.random(in: Int64.min ... Int64.max)
 +        let token = UUID()
 +        let createdAt = Int64(Date().timeIntervalSince1970)
@@ -5921,6 +6276,7 @@ new file mode 100644
 +        }
 +        |> deliverOn(Queue.concurrentDefaultQueue())
 +        |> mapToSignal { reserved -> Signal<AyuBurnSnapshotReference?, NoError> in
++            NSLog("AyuBurn: reservation=%@", reserved ? "ready" : "denied")
 +            guard reserved else { return .single(nil) }
 +            guard let candidate = try? ayuPrepareArchiveSnapshot(media: media, mediaBox: mediaBox, archiveFileId: fileId,
 +                                                                  reservationToken: token, maximumBytes: bytes),
@@ -5930,6 +6286,7 @@ new file mode 100644
 +                |> map { _ -> AyuBurnSnapshotReference? in return nil }
 +            }
 +            return postbox.transaction { transaction -> AyuBurnSnapshotReference? in
++                NSLog("AyuBurn: committing local copy")
 +                guard let archivedId = ayuCommitPreparedViewOnceCopy(transaction: transaction, mediaBox: mediaBox,
 +                                                                      messageId: messageId, token: token, verified: verified),
 +                      let reference = ayuPendingBurnReference(transaction: transaction, originalId: messageId, state: .committed),
@@ -6049,7 +6406,7 @@ diff --git a/submodules/TelegramCore/Sources/AyuPrivacy/AyuViewOnceBurnRequest.s
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuPrivacy/AyuViewOnceBurnRequest.swift
-@@ -0,0 +1,67 @@
+@@ -0,0 +1,76 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
@@ -6073,6 +6430,7 @@ new file mode 100644
 +        return ayuBeginPreparedViewOnceBurn(transaction: transaction, verified: verified)
 +    }
 +    |> mapToSignal { started -> Signal<AyuBurnAttemptResult, NoError> in
++        NSLog("AyuBurn: request stage, started=%@", started ? "yes" : "no")
 +        guard started else { return .single(.notStarted) }
 +        return account.network.request(Api.functions.messages.readMessageContents(id: [reference.originalId.id]), automaticFloodWait: false)
 +        |> map(Optional.init)
@@ -6083,6 +6441,7 @@ new file mode 100644
 +        // Keep the in-flight journal entry and local copy for reconciliation.
 +        |> timeout(20.0, queue: Queue.concurrentDefaultQueue(), alternate: .single(nil))
 +        |> mapToSignal { result -> Signal<AyuBurnAttemptResult, NoError> in
++            NSLog("AyuBurn: network response=%@", result.map { _ in "received" } ?? "missing")
 +            guard let result else { return .single(.uncertain) }
 +            switch result {
 +            case let .affectedMessages(data):
@@ -6107,9 +6466,16 @@ new file mode 100644
 +// The second verification happens off the Postbox queue immediately before
 +// revalidating the source and persisting the in-flight request.
 +func ayuAttemptViewOnceBurn(account: Account, messageId: MessageId) -> Signal<AyuBurnAttemptResult, NoError> {
++    NSLog("AyuBurn: preparing local copy")
++    // Deliver preparation and its timeout on the same serial queue: a timeout
++    // must not report notStarted while a racing result starts a server request.
++    // An interrupted reservation remains protected until recovery can inspect it.
++    let preparationQueue = Queue()
 +    return ayuPrepareViewOnceSnapshot(account: account, messageId: messageId)
-+    |> deliverOn(Queue.concurrentDefaultQueue())
++    |> deliverOn(preparationQueue)
++    |> timeout(30.0, queue: preparationQueue, alternate: .single(nil))
 +    |> mapToSignal { reference -> Signal<AyuBurnAttemptResult, NoError> in
++        NSLog("AyuBurn: local copy reference=%@", reference == nil ? "missing" : "ready")
 +        guard let reference,
 +              let verified = AyuVerifiedBurnSnapshot.verify(reference, mediaBoxBasePath: account.postbox.mediaBox.basePath) else {
 +            return .single(.notStarted)
@@ -6347,7 +6713,7 @@ new file mode 100644
 +        suppressTypingStatus: true,
 +        revealOnInteractions: false,
 +        goOfflineAutomatically: true,
-+        keepViewOnceMedia: false
++        keepViewOnceMedia: true
 +    )
 +
 +    public var isEnabled: Bool
@@ -8632,7 +8998,7 @@ diff --git a/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swif
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swift
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,83 @@
 +import Foundation
 +import Display
 +import SwiftSignalKit
@@ -8643,8 +9009,16 @@ new file mode 100644
 +
 +private final class DeletedJournalArguments {
 +    let open: (EngineMessage.Id) -> Void
++    let context: AccountContext
++    let presentationData: PresentationData
++    let messages: [EngineMessage.Id: EngineMessage]
 +
-+    init(open: @escaping (EngineMessage.Id) -> Void) {
++    init(context: AccountContext, presentationData: PresentationData, messages: [EngineMessage], open: @escaping (EngineMessage.Id) -> Void) {
++        self.context = context
++        self.presentationData = presentationData
++        self.messages = messages.reduce(into: [:]) { result, message in
++            result[message.id] = message
++        }
 +        self.open = open
 +    }
 +}
@@ -8671,15 +9045,23 @@ new file mode 100644
 +        case let .empty(text):
 +            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
 +        case let .message(_, id, title):
-+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: "", sectionId: self.section, style: .blocks, action: {
-+                arguments.open(id)
-+            })
++            guard let message = arguments.messages[id] else {
++                return ItemListTextItem(presentationData: presentationData, text: .plain(title), sectionId: self.section)
++            }
++            let data = arguments.presentationData
++            return arguments.context.sharedContext.makeChatMessagePreviewItem(
++                context: arguments.context, messages: [message], theme: data.theme, strings: data.strings,
++                wallpaper: data.chatWallpaper, fontSize: data.chatFontSize, chatBubbleCorners: data.chatBubbleCorners,
++                dateTimeFormat: data.dateTimeFormat, nameOrder: data.nameDisplayOrder, forcedResourceStatus: nil,
++                tapMessage: { _ in arguments.open(id) }, clickThroughMessage: nil, backgroundNode: nil,
++                availableReactions: nil, accountPeer: nil, isCentered: false, isPreview: false, isStandalone: true,
++                rank: nil, rankRole: nil, isGiftMessageComposerPreview: false, activateGiftMessageInput: nil
++            )
 +        }
 +    }
 +}
 +
 +func deletedMessagesJournalController(context: AccountContext, peerId: EnginePeer.Id, open: @escaping (EngineMessage.Id) -> Void) -> ViewController {
-+    let arguments = DeletedJournalArguments(open: open)
 +    let state = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, context.engine.messages.deletedMessagesForPeer(peerId: peerId))
 +    |> deliverOnMainQueue
 +    |> map { presentationData, messages -> (ItemListControllerState, (ItemListNodeState, Any)) in
@@ -8688,13 +9070,14 @@ new file mode 100644
 +        if messages.isEmpty {
 +            entries = [.empty(isRussian ? "Нет сохранённых удалённых сообщений" : "No saved deleted messages")]
 +        } else {
-+            entries = messages.enumerated().map { index, message in
++            entries = messages.reversed().enumerated().map { index, message in
 +                let title = message.text.isEmpty ? (isRussian ? "Медиа" : "Media") : message.text
 +                return .message(Int32(index), message.id, title)
 +            }
 +        }
 +        let presentation = ItemListPresentationData(presentationData)
 +        let state = ItemListControllerState(presentationData: presentation, title: .text(isRussian ? "Удалённые сообщения" : "Deleted Messages"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        let arguments = DeletedJournalArguments(context: context, presentationData: presentationData, messages: messages, open: open)
 +        return (state, (ItemListNodeState(presentationData: presentation, entries: entries, style: .blocks, animateChanges: false), arguments))
 +    }
 +    return ItemListController(context: context, state: state)

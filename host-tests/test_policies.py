@@ -47,7 +47,13 @@ let once: [(id: String, size: Int64, isDisappearing: Bool)] = [
 let constrained = deletedMessageArchiveRetentionPlan(items: once, limitBytes: 500, disappearingLimitBytes: 50)
 precondition(constrained.removed == ["video"] && constrained.retained == ["ordinary", "photo"])
 var settings = GhostModeSettings.defaultSettings
-precondition(!ghostModeDefersViewOnceConsumption(settings: settings, isViewOnce: true, isSecretChat: false, force: false))
+precondition(settings.keepViewOnceMedia)
+precondition(ghostModeDefersViewOnceConsumption(settings: settings, isViewOnce: true, isSecretChat: false, force: false))
+var disabled = settings
+disabled.keepViewOnceMedia = false
+let disabledData = try JSONEncoder().encode(disabled)
+let restoredDisabled = try JSONDecoder().decode(GhostModeSettings.self, from: disabledData)
+precondition(!restoredDisabled.keepViewOnceMedia)
 settings.isEnabled = true
 settings.keepViewOnceMedia = true
 precondition(ghostModeDefersViewOnceConsumption(settings: settings, isViewOnce: true, isSecretChat: false, force: false))
