@@ -2670,7 +2670,7 @@ index 627ad4dbc..850da07cd 100644
          }
      }
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
-index 56ba2739a..31bdc6082 100644
+index 56ba2739a..b7a8f2e8a 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
 @@ -353,7 +353,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
@@ -2708,6 +2708,23 @@ index 56ba2739a..31bdc6082 100644
                  
                  // The custom-emoji attribute is not re-applied here: `stringWithAppliedEntities`
                  // already attached it, using ranges adjusted for the substitutions it performs
+@@ -1798,7 +1817,15 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+             return NSRange(location: location, length: upperBound - location)
+         }
+         
+-        let range = normalizedSelectionRange(rawRange, length: string.length)
++        // Archived revisions shown below the live text are not part of the
++        // server message and must never become a reply quote at a fake offset.
++        let selectionLength: Int
++        if item.message.archivedMessageAttribute?.versionIds.isEmpty == false {
++            selectionLength = min(string.length, (item.message.text as NSString).length)
++        } else {
++            selectionLength = string.length
++        }
++        let range = normalizedSelectionRange(rawRange, length: selectionLength)
+         guard range.length > 0 else {
+             return nil
+         }
 diff --git a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift b/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
 index eadd3a184..f48002d73 100644
 --- a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
