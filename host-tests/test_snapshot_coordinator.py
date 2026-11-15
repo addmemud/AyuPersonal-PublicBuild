@@ -38,6 +38,7 @@ production = '\n\n'.join(declaration(name) for name in (
 
 stubs = r'''
 import Foundation
+final class Logger { static let shared = Logger(); func log(_ tag: String, _ text: String) {} }
 
 enum NoError: Error {}
 struct Signal<Value, Failure> {

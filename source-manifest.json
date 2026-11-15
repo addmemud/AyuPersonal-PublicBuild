@@ -2,7 +2,7 @@
   "name": "Ayu Personal",
   "upstream_url": "https://github.com/TelegramMessenger/Telegram-iOS.git",
   "upstream_commit": "fb0e62ba8a147f0821da6aa63c09da7d79a10111",
-  "patch_sha256": "5fb8184a17eb8162b2619972862177ff3858d88e5edb976ef6a540ce14ea156e",
+  "patch_sha256": "50ca0c4520bd21c99794d149bcfdb7c56d2270f8c018a5d9c2ffd502f01ed446",
   "bundle_id": "org.ayupersonal.addmemud",
   "ios_build_verified": false,
   "changed_files": [
