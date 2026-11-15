@@ -909,7 +909,7 @@ index e28f7b900..5642b5469 100644
  
  table TelegramMediaResource {
 diff --git a/submodules/TelegramCore/Sources/Account/Account.swift b/submodules/TelegramCore/Sources/Account/Account.swift
-index af6b6078e..92d072a01 100644
+index af6b6078e..930f65a99 100644
 --- a/submodules/TelegramCore/Sources/Account/Account.swift
 +++ b/submodules/TelegramCore/Sources/Account/Account.swift
 @@ -1261,6 +1261,7 @@ public class Account {
@@ -928,13 +928,14 @@ index af6b6078e..92d072a01 100644
          
          self.peerInputActivityManager = PeerInputActivityManager()
          
-@@ -1373,11 +1375,16 @@ public class Account {
+@@ -1373,11 +1375,17 @@ public class Account {
          
          self.contactSyncManager = ContactSyncManager(postbox: postbox, network: network, accountPeerId: peerId, stateManager: self.stateManager)
          self.localInputActivityManager = PeerInputActivityManager()
 -        self.accountPresenceManager = AccountPresenceManager(shouldKeepOnlinePresence: self.shouldKeepOnlinePresence.get(), network: network)
 +        let effectiveOnlinePresence = combineLatest(self.shouldKeepOnlinePresence.get(), self.ghostModeRuntime.settings, self.ghostModeRuntime.temporaryOnline)
 +        |> map { shouldKeepOnlinePresence, settings, temporaryOnline -> Bool in
++            Logger.shared.log("AyuPresence", "foreground=\(shouldKeepOnlinePresence) ghost=\(settings.isEnabled) hideOnline=\(settings.suppressOnlineStatus) reveal=\(temporaryOnline)")
 +            return shouldKeepOnlinePresence && (!settings.hidesOnlineStatus || temporaryOnline)
 +        }
 +        |> distinctUntilChanged
@@ -947,7 +948,7 @@ index af6b6078e..92d072a01 100644
          #endif
          let _ = (postbox.transaction { transaction -> Void in
              transaction.updatePeerPresencesInternal(presences: [peerId: TelegramUserPresence(status: .present(until: Int32.max - 1), lastActivity: 0)], merge: { _, updated in return updated })
-@@ -1392,6 +1399,9 @@ public class Account {
+@@ -1392,6 +1400,9 @@ public class Account {
          self.messageMediaPreuploadManager = MessageMediaPreuploadManager()
          self.pendingMessageManager = PendingMessageManager(network: network, postbox: postbox, accountPeerId: peerId, auxiliaryMethods: auxiliaryMethods, stateManager: self.stateManager, localInputActivityManager: self.localInputActivityManager, messageMediaPreuploadManager: self.messageMediaPreuploadManager, revalidationContext: self.mediaReferenceRevalidationContext)
          let _ = _internal_failStaleEphemeralOutgoingMessages(postbox: postbox).start()
@@ -957,7 +958,7 @@ index af6b6078e..92d072a01 100644
          if !supplementary {
              self.pendingStoryManager = PendingStoryManager(postbox: postbox, network: network, accountPeerId: peerId, stateManager: self.stateManager, messageMediaPreuploadManager: self.messageMediaPreuploadManager, revalidationContext: self.mediaReferenceRevalidationContext, auxiliaryMethods: self.auxiliaryMethods)
          } else {
-@@ -1508,9 +1518,20 @@ public class Account {
+@@ -1508,9 +1519,20 @@ public class Account {
          self.managedOperationsDisposable.add(managedAutoexpireStoryOperations(network: self.network, postbox: self.postbox).start())
          self.managedOperationsDisposable.add(managedPeerTimestampAttributeOperations(network: self.network, postbox: self.postbox).start())
          self.managedOperationsDisposable.add(managedPendingWalletTransferMessages(postbox: self.postbox).start())
@@ -979,7 +980,7 @@ index af6b6078e..92d072a01 100644
          
          let extractedExpr1: [Signal<AccountRunningImportantTasks, NoError>] = [
              self.walletTransferTasksRunning.get() |> map { hasTasks in
-@@ -1748,6 +1769,22 @@ public class Account {
+@@ -1748,6 +1770,22 @@ public class Account {
      public func acquireLocalInputActivity(peerId: PeerActivitySpace, activity: PeerInputActivity) -> Disposable {
          return self.localInputActivityManager.acquireActivity(chatPeerId: peerId, peerId: self.peerId, activity: activity)
      }
@@ -2685,7 +2686,7 @@ index 627ad4dbc..850da07cd 100644
          }
      }
 diff --git a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
-index 56ba2739a..b7a8f2e8a 100644
+index 56ba2739a..fe3d485aa 100644
 --- a/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
 +++ b/submodules/TelegramUI/Components/Chat/ChatMessageTextBubbleContentNode/Sources/ChatMessageTextBubbleContentNode.swift
 @@ -353,7 +353,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
@@ -2697,49 +2698,63 @@ index 56ba2739a..b7a8f2e8a 100644
                  var messageEntities: [MessageTextEntity]?
                  
                  var mediaDuration: Double? = nil
-@@ -604,6 +604,25 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+@@ -604,6 +604,23 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                  } else {
                      attributedText = NSAttributedString(string: " ", font: textFont, textColor: messageTheme.primaryTextColor)
                  }
 +
-+                // Previous revisions are locally associated messages, never text
-+                // sent to the server. Append plain text after rendering the live
-+                // message so its entity offsets and links remain unchanged.
++                // Previous revisions precede the live message. They are local
++                // history and are not part of the text sent to the server.
 +                if let history = item.message.archivedMessageAttribute, !history.versionIds.isEmpty {
 +                    let previousTexts = history.versionIds.compactMap { id -> String? in
 +                        guard let version = item.message.associatedMessages[id], !version.text.isEmpty else { return nil }
 +                        return version.text
 +                    }
 +                    if !previousTexts.isEmpty {
-+                        let isRussian = item.presentationData.strings.primaryComponent.languageCode.hasPrefix("ru")
-+                        let label = isRussian ? "Ранее" : "Previously"
-+                        let result = NSMutableAttributedString(attributedString: attributedText)
++                        let result = NSMutableAttributedString(string: "")
 +                        for previousText in previousTexts {
-+                            result.append(NSAttributedString(string: "\n\n\(label): \(previousText)", font: textFont, textColor: messageTheme.primaryTextColor.withAlphaComponent(0.65)))
++                            result.append(NSAttributedString(string: "\(previousText)\n\n", font: textFont, textColor: messageTheme.primaryTextColor.withAlphaComponent(0.65)))
 +                        }
++                        result.append(attributedText)
 +                        attributedText = result
 +                    }
 +                }
                  
                  // The custom-emoji attribute is not re-applied here: `stringWithAppliedEntities`
                  // already attached it, using ranges adjusted for the substitutions it performs
-@@ -1798,7 +1817,15 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
+@@ -1798,18 +1815,29 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
              return NSRange(location: location, length: upperBound - location)
          }
          
 -        let range = normalizedSelectionRange(rawRange, length: string.length)
-+        // Archived revisions shown below the live text are not part of the
-+        // server message and must never become a reply quote at a fake offset.
-+        let selectionLength: Int
-+        if item.message.archivedMessageAttribute?.versionIds.isEmpty == false {
-+            selectionLength = min(string.length, (item.message.text as NSString).length)
-+        } else {
-+            selectionLength = string.length
-+        }
-+        let range = normalizedSelectionRange(rawRange, length: selectionLength)
++        // History is display-only. Map the selection back to the live text
++        // so a reply quote never uses an offset within an old revision.
++        let historyPrefix = item.message.archivedMessageAttribute?.versionIds.compactMap { id -> String? in
++            guard let version = item.message.associatedMessages[id], !version.text.isEmpty else { return nil }
++            return version.text + "\n\n"
++        }.joined() ?? ""
++        let prefixLength = string.string.hasPrefix(historyPrefix) ? (historyPrefix as NSString).length : 0
++        let normalized = normalizedSelectionRange(rawRange, length: string.length)
++        let start = max(normalized.location, prefixLength)
++        let liveTextEnd = prefixLength == 0 ? string.length : min(string.length, prefixLength + (item.message.text as NSString).length)
++        let end = min(normalized.location + normalized.length, liveTextEnd)
++        let range = NSRange(location: start, length: max(0, end - start))
          guard range.length > 0 else {
              return nil
          }
+ 
+         let nsString = string.string as NSString
+         let substring = nsString.substring(with: range)
+-        let offset = range.location
++        let offset = range.location - prefixLength
+         
+         var entities: [MessageTextEntity] = []
+         if let textEntitiesAttribute = item.message.textEntitiesAttribute {
+-            entities = messageTextEntitiesInRange(entities: textEntitiesAttribute.entities, range: range, onlyQuoteable: true)
++            entities = messageTextEntitiesInRange(entities: textEntitiesAttribute.entities, range: NSRange(location: offset, length: range.length), onlyQuoteable: true)
+         }
+         
+         return (substring, entities, offset)
 diff --git a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift b/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
 index eadd3a184..f48002d73 100644
 --- a/submodules/TelegramUI/Components/ChatTitleView/Sources/ChatTitleComponent.swift
@@ -6246,7 +6261,7 @@ new file mode 100644
 +    }
 +    |> deliverOn(Queue.concurrentDefaultQueue())
 +    |> mapToSignal { result -> Signal<AyuBurnSnapshotReference?, NoError> in
-+        NSLog("AyuBurn: source lookup=%@", result.1.map { _ in "ready" } ?? "missing")
++        Logger.shared.log("AyuBurn", "source lookup=\(result.1 == nil ? "missing" : "ready")")
 +        guard let media = result.1 else { return .single(nil) }
 +        if let existing = result.0 {
 +            guard ayuViewOnceSourceResourceId(media)?.stringRepresentation == existing.sourceResourceId,
@@ -6265,7 +6280,7 @@ new file mode 100644
 +              let attributes = try? FileManager.default.attributesOfItem(atPath: path),
 +              attributes[.type] as? FileAttributeType == .typeRegular,
 +              let bytes = (attributes[.size] as? NSNumber)?.int64Value, bytes > 0 else { return .single(nil) }
-+        NSLog("AyuBurn: source file ready")
++        Logger.shared.log("AyuBurn", "source file ready")
 +        let fileId = Int64.random(in: Int64.min ... Int64.max)
 +        let token = UUID()
 +        let createdAt = Int64(Date().timeIntervalSince1970)
@@ -6276,7 +6291,7 @@ new file mode 100644
 +        }
 +        |> deliverOn(Queue.concurrentDefaultQueue())
 +        |> mapToSignal { reserved -> Signal<AyuBurnSnapshotReference?, NoError> in
-+            NSLog("AyuBurn: reservation=%@", reserved ? "ready" : "denied")
++            Logger.shared.log("AyuBurn", "reservation=\(reserved ? "ready" : "denied")")
 +            guard reserved else { return .single(nil) }
 +            guard let candidate = try? ayuPrepareArchiveSnapshot(media: media, mediaBox: mediaBox, archiveFileId: fileId,
 +                                                                  reservationToken: token, maximumBytes: bytes),
@@ -6286,7 +6301,7 @@ new file mode 100644
 +                |> map { _ -> AyuBurnSnapshotReference? in return nil }
 +            }
 +            return postbox.transaction { transaction -> AyuBurnSnapshotReference? in
-+                NSLog("AyuBurn: committing local copy")
++                Logger.shared.log("AyuBurn", "committing local copy")
 +                guard let archivedId = ayuCommitPreparedViewOnceCopy(transaction: transaction, mediaBox: mediaBox,
 +                                                                      messageId: messageId, token: token, verified: verified),
 +                      let reference = ayuPendingBurnReference(transaction: transaction, originalId: messageId, state: .committed),
@@ -6406,7 +6421,7 @@ diff --git a/submodules/TelegramCore/Sources/AyuPrivacy/AyuViewOnceBurnRequest.s
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramCore/Sources/AyuPrivacy/AyuViewOnceBurnRequest.swift
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,76 @@
 +import Foundation
 +import Postbox
 +import SwiftSignalKit
@@ -6430,7 +6445,7 @@ new file mode 100644
 +        return ayuBeginPreparedViewOnceBurn(transaction: transaction, verified: verified)
 +    }
 +    |> mapToSignal { started -> Signal<AyuBurnAttemptResult, NoError> in
-+        NSLog("AyuBurn: request stage, started=%@", started ? "yes" : "no")
++        Logger.shared.log("AyuBurn", "request stage, started=\(started)")
 +        guard started else { return .single(.notStarted) }
 +        return account.network.request(Api.functions.messages.readMessageContents(id: [reference.originalId.id]), automaticFloodWait: false)
 +        |> map(Optional.init)
@@ -6441,7 +6456,7 @@ new file mode 100644
 +        // Keep the in-flight journal entry and local copy for reconciliation.
 +        |> timeout(20.0, queue: Queue.concurrentDefaultQueue(), alternate: .single(nil))
 +        |> mapToSignal { result -> Signal<AyuBurnAttemptResult, NoError> in
-+            NSLog("AyuBurn: network response=%@", result.map { _ in "received" } ?? "missing")
++            Logger.shared.log("AyuBurn", "network response=\(result == nil ? "missing" : "received")")
 +            guard let result else { return .single(.uncertain) }
 +            switch result {
 +            case let .affectedMessages(data):
@@ -6466,11 +6481,16 @@ new file mode 100644
 +// The second verification happens off the Postbox queue immediately before
 +// revalidating the source and persisting the in-flight request.
 +func ayuAttemptViewOnceBurn(account: Account, messageId: MessageId) -> Signal<AyuBurnAttemptResult, NoError> {
-+    NSLog("AyuBurn: preparing local copy")
++    Logger.shared.log("AyuBurn", "preparing local copy")
++    // Deliver preparation and its timeout on the same serial queue: a timeout
++    // must not report notStarted while a racing result starts a server request.
++    // An interrupted reservation remains protected until recovery can inspect it.
++    let preparationQueue = Queue()
 +    return ayuPrepareViewOnceSnapshot(account: account, messageId: messageId)
-+    |> deliverOn(Queue.concurrentDefaultQueue())
++    |> deliverOn(preparationQueue)
++    |> timeout(30.0, queue: preparationQueue, alternate: .single(nil))
 +    |> mapToSignal { reference -> Signal<AyuBurnAttemptResult, NoError> in
-+        NSLog("AyuBurn: local copy reference=%@", reference == nil ? "missing" : "ready")
++        Logger.shared.log("AyuBurn", "local copy reference=\(reference == nil ? "missing" : "ready")")
 +        guard let reference,
 +              let verified = AyuVerifiedBurnSnapshot.verify(reference, mediaBoxBasePath: account.postbox.mediaBox.basePath) else {
 +            return .single(.notStarted)
@@ -8993,7 +9013,7 @@ diff --git a/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swif
 new file mode 100644
 --- /dev/null
 +++ b/submodules/TelegramUI/Sources/DeletedMessagesJournalController.swift
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,88 @@
 +import Foundation
 +import Display
 +import SwiftSignalKit
@@ -9001,6 +9021,7 @@ new file mode 100644
 +import TelegramPresentationData
 +import ItemListUI
 +import AccountContext
++import ChatMessageItemImpl
 +
 +private final class DeletedJournalArguments {
 +    let open: (EngineMessage.Id) -> Void
@@ -9044,14 +9065,18 @@ new file mode 100644
 +                return ItemListTextItem(presentationData: presentationData, text: .plain(title), sectionId: self.section)
 +            }
 +            let data = arguments.presentationData
-+            return arguments.context.sharedContext.makeChatMessagePreviewItem(
++            let item = arguments.context.sharedContext.makeChatMessagePreviewItem(
 +                context: arguments.context, messages: [message], theme: data.theme, strings: data.strings,
 +                wallpaper: data.chatWallpaper, fontSize: data.chatFontSize, chatBubbleCorners: data.chatBubbleCorners,
 +                dateTimeFormat: data.dateTimeFormat, nameOrder: data.nameDisplayOrder, forcedResourceStatus: nil,
-+                tapMessage: { _ in arguments.open(id) }, clickThroughMessage: nil, backgroundNode: nil,
++                tapMessage: { _ in arguments.open(id) }, clickThroughMessage: { _, _ in arguments.open(id) }, backgroundNode: nil,
 +                availableReactions: nil, accountPeer: nil, isCentered: false, isPreview: false, isStandalone: true,
 +                rank: nil, rankRole: nil, isGiftMessageComposerPreview: false, activateGiftMessageInput: nil
 +            )
++            // Preview items normally live in Telegram's inverted chat list.
++            // This journal uses a regular list, so its messages must be upright.
++            (item as? ChatMessageItemImpl)?.controllerInteraction.chatIsRotated = false
++            return item
 +        }
 +    }
 +}
