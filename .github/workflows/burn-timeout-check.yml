@@ -50,4 +50,5 @@ jobs:
           python3 host-tests/test_burn_transactions.py
           python3 host-tests/test_archive_deletion_coordinator.py
           python3 host-tests/test_burn_request.py
+          python3 host-tests/test_preparation_timeout_real.py
           python3 host-tests/test_snapshot_coordinator.py
