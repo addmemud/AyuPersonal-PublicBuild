@@ -2,7 +2,7 @@
   "name": "Ayu Personal",
   "upstream_url": "https://github.com/TelegramMessenger/Telegram-iOS.git",
   "upstream_commit": "fb0e62ba8a147f0821da6aa63c09da7d79a10111",
-  "patch_sha256": "c4eaf9f8ba910cdc88bd4eec7ddcca11858c309bc973dce9b275883d234edafd",
+  "patch_sha256": "8123cc16fec3e617026eaac8918aa29b62e709cff2d046dbd7b696ac117b7deb",
   "bundle_id": "org.ayupersonal.addmemud",
   "ios_build_verified": false,
   "changed_files": [
@@ -17,6 +17,7 @@
     "submodules/ChatListUI/Sources/ChatListController.swift",
     "submodules/DeletedMessageArchiveTests/BUILD",
     "submodules/DeletedMessageArchiveTests/Tests/DeletedMessageArchiveTests.swift",
+    "submodules/GalleryData/Sources/GalleryData.swift",
     "submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift",
     "submodules/GalleryUI/Sources/GalleryController.swift",
     "submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift",

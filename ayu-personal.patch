@@ -170,6 +170,19 @@ index 5bdff8a69..b7e115357 100644
              let contextController = makeContextController(presentationData: presentationData, source: .reference(HeaderContextReferenceContentSource(controller: sourceController, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), gesture: gesture)
              sourceController.presentInGlobalOverlay(contextController)
          })
+diff --git a/submodules/GalleryData/Sources/GalleryData.swift b/submodules/GalleryData/Sources/GalleryData.swift
+index b9274cc23..23191e3dc 100644
+--- a/submodules/GalleryData/Sources/GalleryData.swift
++++ b/submodules/GalleryData/Sources/GalleryData.swift
+@@ -321,7 +321,7 @@ public func chatMessageGalleryControllerData(
+                 gallery.temporaryDoNotWaitForReady = autoplayingVideo
+                 return .gallery(.single(gallery))
+             } else if message.containsSecretMedia {
+-                let gallery = SecretMediaPreviewController(context: context, messageId: message.id)
++                let gallery = SecretMediaPreviewController(context: context, messageId: message.id, baseNavigationController: navigationController)
+                 return .secretGallery(gallery)
+             } else {
+                 let startState: Signal<(timecode: Double?, rate: Double), NoError>
 diff --git a/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift b/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
 index 7d422d4e9..0c6b649d6 100644
 --- a/submodules/GalleryUI/Sources/ChatItemGalleryFooterContentNode.swift
@@ -410,7 +423,7 @@ index 7636bd184..6ef082905 100644
                  self.footerContentNode.setWebPage(webPage, media: media)
              }
 diff --git a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
-index 3596b9d8f..8b7da4c41 100644
+index 3596b9d8f..f1c8530fb 100644
 --- a/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 +++ b/submodules/GalleryUI/Sources/SecretMediaPreviewController.swift
 @@ -6,6 +6,7 @@ import Postbox
@@ -421,7 +434,15 @@ index 3596b9d8f..8b7da4c41 100644
  import AccountContext
  import RadialStatusNode
  import ScreenCaptureDetection
-@@ -157,6 +158,11 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -148,6 +149,7 @@ private final class SecretMediaPreviewControllerNode: GalleryControllerNode {
+ public final class SecretMediaPreviewController: ViewController {
+     private let context: AccountContext
+     private let messageId: MessageId
++    private weak var ayuBaseNavigationController: NavigationController?
+     
+     private let _ready = Promise<Bool>()
+     override public var ready: Promise<Bool> {
+@@ -157,6 +159,11 @@ public final class SecretMediaPreviewController: ViewController {
      
      private let disposable = MetaDisposable()
      private let markMessageAsConsumedDisposable = MetaDisposable()
@@ -433,18 +454,23 @@ index 3596b9d8f..8b7da4c41 100644
      
      private var controllerNode: SecretMediaPreviewControllerNode {
          return self.displayNode as! SecretMediaPreviewControllerNode
-@@ -180,7 +186,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -180,10 +187,13 @@ public final class SecretMediaPreviewController: ViewController {
      private var screenCaptureEventsDisposable: Disposable?
      
      private weak var tooltipController: TooltipScreen?
 -    
+-    public init(context: AccountContext, messageId: MessageId) {
 +
 +    private var ghostModeSettings = GhostModeSettings.defaultSettings
 +
-     public init(context: AccountContext, messageId: MessageId) {
++    public init(context: AccountContext, messageId: MessageId, baseNavigationController: NavigationController? = nil) {
          self.context = context
          self.messageId = messageId
-@@ -193,15 +201,25 @@ public final class SecretMediaPreviewController: ViewController {
++        self.ayuBaseNavigationController = baseNavigationController
+         self.presentationData = context.sharedContext.currentPresentationData.with { $0 }
+         
+         super.init(navigationBarPresentationData: NavigationBarPresentationData(theme: GalleryController.darkNavigationTheme, strings: NavigationBarStrings(presentationStrings: self.presentationData.strings)))
+@@ -193,15 +203,25 @@ public final class SecretMediaPreviewController: ViewController {
          
          self.statusBar.statusBarStyle = .White
          
@@ -477,7 +503,7 @@ index 3596b9d8f..8b7da4c41 100644
          self.hiddenMediaManagerIndex = self.context.sharedContext.mediaManager.galleryHiddenMediaManager.addSource(self._hiddenMedia.get()
          |> map { messageIdAndMedia in
              if let (messageId, media) = messageIdAndMedia {
-@@ -228,6 +246,8 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -228,6 +248,8 @@ public final class SecretMediaPreviewController: ViewController {
      deinit {
          self.disposable.dispose()
          self.markMessageAsConsumedDisposable.dispose()
@@ -486,7 +512,7 @@ index 3596b9d8f..8b7da4c41 100644
          if let hiddenMediaManagerIndex = self.hiddenMediaManagerIndex {
              self.context.sharedContext.mediaManager.galleryHiddenMediaManager.removeSource(hiddenMediaManagerIndex)
          }
-@@ -241,6 +261,67 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -241,6 +263,67 @@ public final class SecretMediaPreviewController: ViewController {
      @objc func donePressed() {
          self.dismiss(forceAway: false)
      }
@@ -554,7 +580,17 @@ index 3596b9d8f..8b7da4c41 100644
      
      public override func loadDisplayNode() {
          let controllerInteraction = GalleryControllerInteraction(presentController: { [weak self] controller, arguments in
-@@ -295,7 +376,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -259,6 +342,9 @@ public final class SecretMediaPreviewController: ViewController {
+         })
+         self.displayNode = SecretMediaPreviewControllerNode(context: self.context, controllerInteraction: controllerInteraction, titleView: nil)
+         self.displayNodeDidLoad()
++        self.controllerNode.baseNavigationController = { [weak self] in
++            return self?.ayuBaseNavigationController
++        }
+         
+         self.controllerNode.statusPressed = { [weak self] _ in
+             if let self {
+@@ -295,7 +381,7 @@ public final class SecretMediaPreviewController: ViewController {
          self.controllerNode.beginCustomDismiss = { [weak self] _ in
              if let strongSelf = self {
                  strongSelf._hiddenMedia.set(.single(nil))
@@ -563,7 +599,7 @@ index 3596b9d8f..8b7da4c41 100644
                  let animatedOutNode = true
                  
                  strongSelf.controllerNode.animateOut(animateContent: animatedOutNode, completion: {
-@@ -376,6 +457,17 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -376,6 +462,17 @@ public final class SecretMediaPreviewController: ViewController {
                          if message.flags.contains(.Incoming) || strongSelf.currentNodeMessageIsVideo {
                              if let node = strongSelf.controllerNode.pager.centralItemNode() {
                                  strongSelf.footerContentNode.set(node.footerContent())
@@ -581,7 +617,7 @@ index 3596b9d8f..8b7da4c41 100644
                              }
                          } else {
                              if timerStarted {
-@@ -425,7 +517,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -425,7 +522,9 @@ public final class SecretMediaPreviewController: ViewController {
                      if strongSelf.messageId.peerId.namespace == Namespaces.Peer.CloudUser {
                          let _ = enqueueMessages(account: strongSelf.context.account, peerId: strongSelf.messageId.peerId, messages: [.message(text: "", attributes: [], inlineStickers: [:], mediaReference: .standalone(media: TelegramMediaAction(action: TelegramMediaActionType.historyScreenshot)), threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
                      } else if strongSelf.messageId.peerId.namespace == Namespaces.Peer.SecretChat {
@@ -592,7 +628,7 @@ index 3596b9d8f..8b7da4c41 100644
                      }
                  }
              })
-@@ -513,6 +607,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -513,6 +612,9 @@ public final class SecretMediaPreviewController: ViewController {
          if let message = message {
              if self.currentNodeMessageId != message.id {
                  self.currentNodeMessageId = message.id
@@ -602,7 +638,7 @@ index 3596b9d8f..8b7da4c41 100644
                  var tempFilePath: String?
                  var duration: Double = 0.0
                  for media in message.media {
-@@ -527,9 +624,10 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -527,9 +629,10 @@ public final class SecretMediaPreviewController: ViewController {
                          break
                      }
                  }
@@ -615,7 +651,7 @@ index 3596b9d8f..8b7da4c41 100644
                      if let self {
                          if self.currentNodeMessageIsViewOnce || (duration < 30.0 && !self.currentMessageIsDismissed) {
                              if let node = self.controllerNode.pager.centralItemNode() as? UniversalVideoGalleryItemNode {
-@@ -539,7 +637,9 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -539,7 +642,9 @@ public final class SecretMediaPreviewController: ViewController {
                              self.dismiss(forceAway: false)
                          }
                      }
@@ -626,7 +662,7 @@ index 3596b9d8f..8b7da4c41 100644
                      self._ready.set(.single(true))
                      return
                  }
-@@ -597,6 +697,7 @@ public final class SecretMediaPreviewController: ViewController {
+@@ -597,6 +702,7 @@ public final class SecretMediaPreviewController: ViewController {
              }
              self.currentMessageIsDismissed = true
          }
