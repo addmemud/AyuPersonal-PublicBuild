@@ -270,7 +270,7 @@ index 5998c8611..0834970a3 100644
                          performAction: performAction,
                          openActionOptions: openActionOptions,
 diff --git a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
-index a1f9746c9..c3eb6e6ef 100644
+index a1f9746c9..c85e749ef 100644
 --- a/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 +++ b/submodules/GalleryUI/Sources/Items/ChatImageGalleryItem.swift
 @@ -130,13 +130,14 @@ class ChatImageGalleryItem: GalleryItem {
@@ -315,7 +315,15 @@ index a1f9746c9..c3eb6e6ef 100644
          }
      }
      
-@@ -457,14 +459,17 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+@@ -225,6 +227,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+     private var translateToLanguage: String?
+     private var peerIsCopyProtected: Bool = false
+     private var isSecret: Bool = false
++    private var allowCaptureOfViewOnceMedia: Bool = false
+     private let presentationData: PresentationData
+     
+     private var sendSticker: ((FileMediaReference) -> Void)?
+@@ -457,14 +460,18 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
          }))
      }
      
@@ -328,6 +336,7 @@ index a1f9746c9..c3eb6e6ef 100644
          self.peerIsCopyProtected = peerIsCopyProtected
          self.isSecret = isSecret
 -        self.imageNode.captureProtected = message.id.peerId.namespace == Namespaces.Peer.SecretChat || message.isCopyProtected() || peerIsCopyProtected || isSecret || message.paidContent != nil
++        self.allowCaptureOfViewOnceMedia = allowCaptureOfViewOnceMedia
 +        self.imageNode.captureProtected = message.isCopyProtected()
 +            || peerIsCopyProtected
 +            || message.paidContent != nil
@@ -335,7 +344,7 @@ index a1f9746c9..c3eb6e6ef 100644
          self.updateFooter(animated: false)
          
          var title: String?
-@@ -489,7 +494,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
+@@ -489,7 +496,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
          guard let message = self.message else {
              return
          }
