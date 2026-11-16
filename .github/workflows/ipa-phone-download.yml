@@ -1,0 +1,22 @@
+name: Publish IPA for phone download
+on:
+  push:
+    branches: [ipa-phone-download-43761253745]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Reassemble and verify IPA
+        run: |
+          cat ipa-transfer/part-* > Telegram-Ayu.ipa
+          echo '0895badfd75ca902233226ba7f9ae20a17d9dad9c5a5f7582cc4fdc2d2143920  Telegram-Ayu.ipa' | sha256sum -c -
+          unzip -tq Telegram-Ayu.ipa
+      - name: Publish downloadable IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ayu-phone-43761253745 Telegram-Ayu.ipa --target "$GITHUB_SHA" --title "Telegram Ayu test build" --notes "Diagnostic build; Burn and online visibility require testing." --prerelease
